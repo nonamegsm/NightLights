@@ -1,0 +1,22 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+dist/
+*.pdb
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Installer build output
+installer/Output/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs / local settings someone might accidentally drop in the repo folder
+*.log

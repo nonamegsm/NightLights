@@ -1,0 +1,93 @@
+name: Release
+
+# Builds the app, the Inno Setup installer, and a portable zip, then attaches
+# both to a GitHub Release - triggered by pushing a tag like "v1.0.0".
+#
+#   git tag v1.0.0
+#   git push origin v1.0.0
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g. 1.0.0) - only used for a manual run'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          $parts = @($version.Split('.') + '0','0','0','0')
+          $assemblyVersion = ($parts[0..3] -join '.')
+          "version=$version"                 >> $env:GITHUB_OUTPUT
+          "assemblyVersion=$assemblyVersion"  >> $env:GITHUB_OUTPUT
+
+      - name: Stamp assembly version
+        shell: pwsh
+        run: |
+          $path = "NightLights/Properties/AssemblyInfo.cs"
+          $v = "${{ steps.version.outputs.assemblyVersion }}"
+          (Get-Content $path) `
+            -replace 'AssemblyVersion\("[^"]+"\)', "AssemblyVersion(`"$v`")" `
+            -replace 'AssemblyFileVersion\("[^"]+"\)', "AssemblyFileVersion(`"$v`")" |
+            Set-Content $path
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build (Release)
+        run: msbuild NightLights.sln /t:Restore,Build /p:Configuration=Release /p:Platform="Any CPU" /m /verbosity:minimal
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss "/DMyAppVersion=${{ steps.version.outputs.version }}"
+
+      - name: Build portable zip
+        shell: pwsh
+        run: |
+          $stage = "dist\NightLights-portable-${{ steps.version.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "NightLights\NightLights\bin\Release\*" -Destination $stage -Recurse -Exclude *.pdb
+          Copy-Item README.md,LICENSE -Destination $stage
+          Compress-Archive -Path "$stage\*" -DestinationPath "dist\NightLights-portable-${{ steps.version.outputs.version }}.zip" -Force
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: NightLights v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          body: |
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+            - **Installer** (`NightLights-Setup-*.exe`) - recommended. No admin rights needed; adds Start Menu/desktop shortcuts and a clean uninstaller.
+            - **Portable** (`NightLights-portable-*.zip`) - just unzip and run `NightLights.exe`; nothing is installed.
+
+            See the README for how to enable MSI motherboard RGB control (requires MSI's Mystic Light SDK DLL, not bundled here).
+          files: |
+            dist/NightLights-Setup-${{ steps.version.outputs.version }}.exe
+            dist/NightLights-portable-${{ steps.version.outputs.version }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
