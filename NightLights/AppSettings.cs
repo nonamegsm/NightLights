@@ -35,6 +35,10 @@ namespace NightLights
         // Manual override: null = follow the sun automatically.
         public bool? ManualNightOverride { get; set; } = null;
 
+        // Last brightness (0-100) used by "Set day profile color...". Kingston FURY CTRL's own
+        // default is 80; remembered here so the dialog doesn't reset to it every time.
+        public int DayProfileBrightness { get; set; } = 80;
+
         public static AppSettings Load()
         {
             try

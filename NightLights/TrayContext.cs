@@ -239,23 +239,31 @@ namespace NightLights
         }
 
         /// <summary>
-        /// Lets you pick one solid color for the DIMMs/motherboard RGB right from the tray,
-        /// instead of having to go into FURY CTRL's own GUI to set up a daytime look. Only
-        /// updates the cached "day profile"; ForceReapplyAsync right after is what actually
-        /// turns it on (or correctly leaves it off, if it happens to be night right now).
+        /// Lets you pick one solid color and brightness for the DIMMs/motherboard RGB right
+        /// from the tray, instead of having to go into FURY CTRL's own GUI to set up a daytime
+        /// look. Brightness matters here, not just cosmetically: FuryControllerService reads it
+        /// straight off the request and defaults a missing value to 0 (i.e. off), so it has to
+        /// be sent explicitly or the color gets set but the LEDs stay dark. Only updates the
+        /// cached "day profile"; ForceReapplyAsync right after is what actually turns it on (or
+        /// correctly leaves it off, if it happens to be night right now).
         /// </summary>
         private async Task SetDayProfileColorAsync()
         {
             Color chosen;
-            using (var dlg = new ColorDialog { FullOpen = true, AnyColor = true })
+            int brightness;
+            using (var dlg = new DayProfileColorForm(Color.White, _settings.DayProfileBrightness))
             {
                 if (dlg.ShowDialog() != DialogResult.OK) return;
                 chosen = dlg.Color;
+                brightness = dlg.BrightnessPercent;
             }
 
+            _settings.DayProfileBrightness = brightness;
+            _settings.Save();
+
             var tasks = new System.Collections.Generic.List<Task>();
-            if (_settings.ControlFuryDram) tasks.Add(_fury.SetStaticColorProfileAsync(chosen.R, chosen.G, chosen.B));
-            if (_settings.ControlMysticLight) tasks.Add(Task.Run(() => _mystic.SetStaticColorProfile(chosen.R, chosen.G, chosen.B)));
+            if (_settings.ControlFuryDram) tasks.Add(_fury.SetStaticColorProfileAsync(chosen.R, chosen.G, chosen.B, brightness));
+            if (_settings.ControlMysticLight) tasks.Add(Task.Run(() => _mystic.SetStaticColorProfile(chosen.R, chosen.G, chosen.B, brightness)));
             await Task.WhenAll(tasks).ConfigureAwait(false);
 
             await ForceReapplyAsync().ConfigureAwait(false);

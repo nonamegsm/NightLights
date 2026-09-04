@@ -177,8 +177,11 @@ namespace NightLights.Rgb
         /// FURY side, this only updates the cached snapshot; TrayContext follows up with
         /// ForceReapplyAsync so the color is actually applied if it's day right now, or stays off
         /// if it's night.
+        /// Mystic Light's SDK has no separate brightness call (MLAPI_SetLedColor just takes an
+        /// R/G/B), so brightnessPercent scales the color itself before it's cached/sent - the
+        /// same brightness knob as the FURY DIMMs, just applied differently under the hood.
         /// </summary>
-        public bool SetStaticColorProfile(uint r, uint g, uint b)
+        public bool SetStaticColorProfile(uint r, uint g, uint b, int brightnessPercent)
         {
             if (!EnsureInitialized()) return false;
 
@@ -191,6 +194,11 @@ namespace NightLights.Rgb
                     return false;
                 }
 
+                double scale = Math.Max(0, Math.Min(100, brightnessPercent)) / 100.0;
+                uint sr = (uint)Math.Round(r * scale);
+                uint sg = (uint)Math.Round(g * scale);
+                uint sb = (uint)Math.Round(b * scale);
+
                 var leds = new List<LedRef>();
                 for (int d = 0; d < devTypes.Length; d++)
                 {
@@ -199,7 +207,7 @@ namespace NightLights.Rgb
 
                     for (uint i = 0; i < count; i++)
                     {
-                        leds.Add(new LedRef { Type = type, Index = i, R = r, G = g, B = b });
+                        leds.Add(new LedRef { Type = type, Index = i, R = sr, G = sg, B = sb });
                     }
                 }
 
@@ -212,7 +220,7 @@ namespace NightLights.Rgb
                 Directory.CreateDirectory(AppSettings.AppDataFolder);
                 var serializer = new JavaScriptSerializer();
                 File.WriteAllText(CachePath, serializer.Serialize(leds));
-                Logger.Log($"MysticLight: day profile set to static color ({leds.Count} zone(s)).");
+                Logger.Log($"MysticLight: day profile set to static color at {brightnessPercent}% brightness ({leds.Count} zone(s)).");
                 return true;
             }
             catch (Exception ex)

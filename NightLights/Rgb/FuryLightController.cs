@@ -172,9 +172,14 @@ namespace NightLights.Rgb
         /// applied if it's day right now, or correctly stays off if it's night.
         /// Mirrors ddr5_static_color_mode::set's field requirements recovered from
         /// FuryControllerService.exe: mode "static_color", ctrl_mode "ctrl", and a
-        /// color_table with one [R,G,B] entry.
+        /// color_table with one [R,G,B] entry, and a "brightness" (0-100) field - this last
+        /// one turned out to matter a lot: FuryControllerService's ddr5_static_color_mode::set
+        /// reads brightness straight off the request object, and a JSON request that omits it
+        /// deserializes to 0 (C#'s default int), which the service then applies as an *actual*
+        /// 0% hardware brightness - so the color gets set correctly but the LEDs stay dark.
+        /// Always sending brightness explicitly is what fixes that.
         /// </summary>
-        public async Task<bool> SetStaticColorProfileAsync(int r, int g, int b)
+        public async Task<bool> SetStaticColorProfileAsync(int r, int g, int b, int brightnessPercent)
         {
             try
             {
@@ -188,6 +193,8 @@ namespace NightLights.Rgb
                     if (slots == null) return false;
                 }
 
+                int brightness = Math.Max(0, Math.Min(100, brightnessPercent));
+
                 var colorSlots = new Dictionary<string, object>();
                 foreach (var kv in slots)
                 {
@@ -198,13 +205,14 @@ namespace NightLights.Rgb
                     }
                     slot["mode"] = "static_color";
                     slot["ctrl_mode"] = "ctrl";
+                    slot["brightness"] = brightness;
                     slot["color_table"] = new List<object> { new List<object> { r, g, b } };
                     colorSlots[kv.Key] = slot;
                 }
 
                 Directory.CreateDirectory(AppSettings.AppDataFolder);
                 File.WriteAllText(CachePath, _json.Serialize(colorSlots));
-                Logger.Log($"Fury: day profile set to static color ({r},{g},{b}).");
+                Logger.Log($"Fury: day profile set to static color ({r},{g},{b}) at {brightness}% brightness.");
                 return true;
             }
             catch (Exception ex)

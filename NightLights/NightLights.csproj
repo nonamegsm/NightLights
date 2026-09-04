@@ -56,6 +56,9 @@
     <Compile Include="TrayContext.cs" />
     <Compile Include="AppSettings.cs" />
     <Compile Include="SunTimes.cs" />
+    <Compile Include="DayProfileColorForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Rgb\FuryCrypto.cs" />
     <Compile Include="Rgb\FuryLightController.cs" />
     <Compile Include="Rgb\MysticLightController.cs" />
