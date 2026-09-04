@@ -27,7 +27,7 @@
   #define BuildArch "x64"
 #endif
 #ifndef SourceBinDir
-  #define SourceBinDir "..\NightLights\NightLights\bin\" + BuildArch + "\Release"
+  #define SourceBinDir "..\NightLights\NightLights\bin\{#BuildArch}\Release"
 #endif
 
 [Setup]
@@ -52,13 +52,12 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-#if BuildArch == "x64"
-; Refuses to run on 32-bit Windows outright, rather than installing a 64-bit exe
-; that just won't start. (ArchitecturesAllowed, not ArchitecturesInstallIn64BitMode
-; with the newer "compatible" suffix - that one broke the very first release build
-; on this repo's Inno Setup version; this older/plainer directive is safe.)
-ArchitecturesAllowed=x64
-#endif
+; Deliberately no ArchitecturesAllowed/ArchitecturesInstallIn64BitMode directive here.
+; This installer just copies the already-arch-specific build output (SourceBinDir above)
+; per BuildArch - it doesn't need Inno Setup to gate anything, and conditional [Setup]
+; directives keyed off a preprocessor #if were the suspected cause of an x86-only
+; release build failure (couldn't be confirmed from CI logs, so removed rather than
+; risk another failed release).
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
