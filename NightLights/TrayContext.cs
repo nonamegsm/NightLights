@@ -108,9 +108,11 @@ namespace NightLights
             _resumeSettleTimer.Start();
         }
 
-        /// <summary>Re-sends whatever the current day/night state should be, without
-        /// touching the cached "day profile" snapshot - used after resume-from-sleep,
-        /// where the goal is just to override whatever the device reverted to on its own.</summary>
+        /// <summary>Unconditionally sends whatever the current day/night state should be
+        /// (turn off, or restore from the cached day profile) - never just a snapshot.
+        /// Used after resume-from-sleep, and by any tray action that changes the
+        /// day/night decision (Force night/day, Follow sun, closing Settings), so those
+        /// always actually apply rather than only reacting on the next natural transition.</summary>
         private async Task ForceReapplyAsync()
         {
             if (_busy) return;
@@ -254,8 +256,13 @@ namespace NightLights
             _settings.ManualNightOverride = value;
             _settings.Save();
             UpdateMenuChecks();
-            _lastAppliedIsNight = null; // force the next tick to re-evaluate and apply
-            _ = TickAsync();
+            // ForceReapplyAsync (not a plain TickAsync) - it unconditionally sends the
+            // matching apply command. Resetting _lastAppliedIsNight and letting the next
+            // regular tick pick it up used to route through TickAsync's "first launch"
+            // branch, which for a day result only *snapshots* rather than restoring - so
+            // clicking "Force day now" right after "Force night now" looked like it did
+            // nothing (and, worse, re-snapshotted the lights-off state as the day profile).
+            _ = ForceReapplyAsync();
         }
 
         private void UpdateMenuChecks()
@@ -284,8 +291,7 @@ namespace NightLights
                     AppSettings.ApplyRunAtStartup(_settings.RunAtStartup);
                     _timer.Interval = Math.Max(15, _settings.PollIntervalSeconds) * 1000;
                     UpdateMenuChecks();
-                    _lastAppliedIsNight = null;
-                    _ = TickAsync();
+                    _ = ForceReapplyAsync(); // same reasoning as SetManualOverride - see its comment
                 }
             }
         }
