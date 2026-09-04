@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Win32;
+using NightLights.Audio;
 using NightLights.Rgb;
 
 namespace NightLights
@@ -17,6 +18,7 @@ namespace NightLights
         private readonly System.Windows.Forms.Timer _timer;
         private readonly FuryLightController _fury = new FuryLightController();
         private readonly MysticLightController _mystic = new MysticLightController();
+        private readonly SystemVolumeController _volume = new SystemVolumeController();
 
         private AppSettings _settings;
         private bool? _lastAppliedIsNight; // null until the first tick decides
@@ -124,6 +126,7 @@ namespace NightLights
                 bool isNight = _settings.ManualNightOverride ?? ComputeIsNight(out _, out _);
                 UpdateStatusText(isNight);
                 await (isNight ? ApplyNightAsync() : ApplyDayAsync()).ConfigureAwait(false);
+                await ApplyVolumePolicyAsync(isNight).ConfigureAwait(false);
                 _lastAppliedIsNight = isNight;
                 _lastEnforcedUtc = DateTime.UtcNow;
             }
@@ -161,6 +164,7 @@ namespace NightLights
                     // a good baseline with what might already be an "all off" nighttime state.
                     if (!isNight) await SaveDayProfileNowAsync().ConfigureAwait(false);
                     else await ApplyNightAsync().ConfigureAwait(false);
+                    await ApplyVolumePolicyAsync(isNight).ConfigureAwait(false);
                     _lastAppliedIsNight = isNight;
                     _lastEnforcedUtc = DateTime.UtcNow;
                 }
@@ -176,6 +180,7 @@ namespace NightLights
                     {
                         await ApplyDayAsync().ConfigureAwait(false);
                     }
+                    await ApplyVolumePolicyAsync(isNight).ConfigureAwait(false);
                     _lastAppliedIsNight = isNight;
                     _lastEnforcedUtc = DateTime.UtcNow;
                 }
@@ -220,6 +225,24 @@ namespace NightLights
             if (_settings.ControlFuryDram) tasks.Add(_fury.TurnOffAsync());
             if (_settings.ControlMysticLight) tasks.Add(Task.Run(() => _mystic.TurnOff()));
             await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Mutes/unmutes system audio for a real day/night transition (first launch, sunset/
+        /// sunrise, or a manual trigger via ForceReapplyAsync) - deliberately NOT called from
+        /// TickAsync's steady-state re-assertion branch. Unlike the lighting, Windows doesn't
+        /// spontaneously un-mute itself, so re-sending "mute" on every poll would just fight
+        /// you if you manually unmute to hear something during the night; one mute per
+        /// transition is enough.
+        /// </summary>
+        private async Task ApplyVolumePolicyAsync(bool isNight)
+        {
+            if (!_settings.SilenceVolumeAtNight) return;
+            await Task.Run(() =>
+            {
+                if (isNight) _volume.Mute();
+                else _volume.Unmute();
+            }).ConfigureAwait(false);
         }
 
         private async Task ApplyDayAsync()

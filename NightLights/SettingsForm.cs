@@ -17,6 +17,7 @@ namespace NightLights
             numLongitude.Value = (decimal)current.Longitude;
             chkFury.Checked = current.ControlFuryDram;
             chkMystic.Checked = current.ControlMysticLight;
+            chkSilenceVolume.Checked = current.SilenceVolumeAtNight;
             chkRunAtStartup.Checked = current.RunAtStartup;
             numPollInterval.Value = Math.Max(numPollInterval.Minimum,
                 Math.Min(numPollInterval.Maximum, current.PollIntervalSeconds));
@@ -49,9 +50,11 @@ namespace NightLights
                 Longitude = (double)numLongitude.Value,
                 ControlFuryDram = chkFury.Checked,
                 ControlMysticLight = chkMystic.Checked,
+                SilenceVolumeAtNight = chkSilenceVolume.Checked,
                 RunAtStartup = chkRunAtStartup.Checked,
                 PollIntervalSeconds = (int)numPollInterval.Value,
-                ManualNightOverride = Result.ManualNightOverride
+                ManualNightOverride = Result.ManualNightOverride,
+                DayProfileBrightness = Result.DayProfileBrightness
             };
         }
     }

@@ -17,6 +17,7 @@ namespace NightLights
         private System.Windows.Forms.Label lblSunInfo;
         private System.Windows.Forms.CheckBox chkFury;
         private System.Windows.Forms.CheckBox chkMystic;
+        private System.Windows.Forms.CheckBox chkSilenceVolume;
         private System.Windows.Forms.CheckBox chkRunAtStartup;
         private System.Windows.Forms.Label lblPollInterval;
         private System.Windows.Forms.NumericUpDown numPollInterval;
@@ -33,6 +34,7 @@ namespace NightLights
             this.lblSunInfo = new System.Windows.Forms.Label();
             this.chkFury = new System.Windows.Forms.CheckBox();
             this.chkMystic = new System.Windows.Forms.CheckBox();
+            this.chkSilenceVolume = new System.Windows.Forms.CheckBox();
             this.chkRunAtStartup = new System.Windows.Forms.CheckBox();
             this.lblPollInterval = new System.Windows.Forms.Label();
             this.numPollInterval = new System.Windows.Forms.NumericUpDown();
@@ -94,39 +96,44 @@ namespace NightLights
             this.chkMystic.Location = new System.Drawing.Point(12, 170);
             this.chkMystic.Text = "Control MSI motherboard RGB (Mystic Light SDK)";
 
+            // chkSilenceVolume
+            this.chkSilenceVolume.AutoSize = true;
+            this.chkSilenceVolume.Location = new System.Drawing.Point(12, 195);
+            this.chkSilenceVolume.Text = "Silence system volume at night (unmuted again at sunrise)";
+
             // chkRunAtStartup
             this.chkRunAtStartup.AutoSize = true;
-            this.chkRunAtStartup.Location = new System.Drawing.Point(12, 195);
+            this.chkRunAtStartup.Location = new System.Drawing.Point(12, 220);
             this.chkRunAtStartup.Text = "Start with Windows";
 
             // lblPollInterval
             this.lblPollInterval.AutoSize = true;
-            this.lblPollInterval.Location = new System.Drawing.Point(12, 228);
+            this.lblPollInterval.Location = new System.Drawing.Point(12, 253);
             this.lblPollInterval.Text = "Check every (seconds):";
 
             // numPollInterval
-            this.numPollInterval.Location = new System.Drawing.Point(160, 225);
+            this.numPollInterval.Location = new System.Drawing.Point(160, 250);
             this.numPollInterval.Minimum = 15;
             this.numPollInterval.Maximum = 3600;
             this.numPollInterval.Size = new System.Drawing.Size(70, 20);
 
             // btnOk
             this.btnOk.Text = "OK";
-            this.btnOk.Location = new System.Drawing.Point(216, 265);
+            this.btnOk.Location = new System.Drawing.Point(216, 290);
             this.btnOk.Size = new System.Drawing.Size(80, 27);
             this.btnOk.DialogResult = System.Windows.Forms.DialogResult.OK;
             this.btnOk.Click += new System.EventHandler(this.BtnOk_Click);
 
             // btnCancel
             this.btnCancel.Text = "Cancel";
-            this.btnCancel.Location = new System.Drawing.Point(302, 265);
+            this.btnCancel.Location = new System.Drawing.Point(302, 290);
             this.btnCancel.Size = new System.Drawing.Size(80, 27);
             this.btnCancel.DialogResult = System.Windows.Forms.DialogResult.Cancel;
 
             // SettingsForm
             this.AcceptButton = this.btnOk;
             this.CancelButton = this.btnCancel;
-            this.ClientSize = new System.Drawing.Size(394, 304);
+            this.ClientSize = new System.Drawing.Size(394, 329);
             this.Controls.Add(this.lblHint);
             this.Controls.Add(this.lblLatitude);
             this.Controls.Add(this.numLatitude);
@@ -135,6 +142,7 @@ namespace NightLights
             this.Controls.Add(this.lblSunInfo);
             this.Controls.Add(this.chkFury);
             this.Controls.Add(this.chkMystic);
+            this.Controls.Add(this.chkSilenceVolume);
             this.Controls.Add(this.chkRunAtStartup);
             this.Controls.Add(this.lblPollInterval);
             this.Controls.Add(this.numPollInterval);

@@ -27,6 +27,12 @@ namespace NightLights
         public bool ControlFuryDram { get; set; } = true;
         public bool ControlMysticLight { get; set; } = true;
 
+        // Off by default: silencing the whole PC is a bigger behavior change than dimming
+        // some RGB, so this one's opt-in. When on, system audio is muted at sunset/"Force
+        // night" and unmuted at sunrise/"Force day" - just once per transition (not re-sent
+        // every poll like the lighting), so you can still manually unmute at night if you want to.
+        public bool SilenceVolumeAtNight { get; set; } = false;
+
         public bool RunAtStartup { get; set; } = false;
 
         // How often (seconds) we re-check whether it's day or night.

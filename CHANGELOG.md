@@ -6,6 +6,10 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Optional "Silence system volume at night" setting: mutes Windows audio at sunset/"Force
+  night" and unmutes it at sunrise/"Force day", via the public Core Audio API. Off by
+  default. Applied once per real transition (not re-sent every poll like the lighting), so
+  a manual unmute at night sticks until the next transition.
 - "Set day profile color..." tray menu item: pick one solid color from within the app to
   use as the day profile for the DIMMs and/or motherboard RGB, without needing FURY CTRL's
   own GUI.

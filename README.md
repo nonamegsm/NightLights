@@ -11,6 +11,9 @@ and turns it back on at sunrise - specifically:
   service (`FuryControllerService.exe`) over its local WebSocket API.
 - **MSI motherboard RGB ("Mystic Light")**, controlled through MSI's official
   Mystic Light SDK.
+- **System volume** (optional, off by default) - mutes Windows audio at night and
+  unmutes it again at sunrise, via the same public Core Audio API the volume
+  mixer's own mute button uses.
 
 No admin rights needed, nothing is installed as a service, and there's no visible
 window - just a tray icon. Sunrise/sunset is computed fully offline from your
@@ -119,10 +122,19 @@ Right-click the tray icon:
   the next sunrise.
 - **Start with Windows** - adds/removes a per-user startup entry (no admin
   needed).
-- **Settings...** - latitude/longitude, which lighting to control, and how
-  often to check (default: every 60 seconds).
+- **Settings...** - latitude/longitude, which lighting (and optionally system
+  volume) to control, and how often to check (default: every 60 seconds).
 - **Open log folder** - `%AppData%\NightLights\NightLights.log`, plus the
   cached "day profile" snapshots, for troubleshooting.
+
+**A note on the volume option:** unlike the lighting (which gets re-applied on
+every poll while it's night, to fight FURY CTRL/some MSI boards silently
+reloading their own last profile - see below), volume is only muted/unmuted
+once, right when day/night actually changes. Windows doesn't spontaneously
+un-mute itself the way those services do, so re-sending "mute" every poll
+would just fight you if you manually unmute at night to hear something -
+NightLights won't re-mute you until the next real transition (sunrise, or
+another Force night/day).
 
 ## Why the lights don't silently turn back on
 
@@ -217,10 +229,13 @@ NightLights/
   AppSettings.cs           settings persisted to %AppData%\NightLights\settings.json
   SunTimes.cs               offline NOAA sunrise/sunset calculator
   SettingsForm.cs/.Designer.cs   the Settings dialog
+  DayProfileColorForm.cs    color + brightness picker for "Set day profile color..."
   Rgb/
     FuryCrypto.cs            AES-256 wire format used by FuryControllerService
     FuryLightController.cs   WebSocket client for FuryControllerService
     MysticLightController.cs P/Invoke wrapper for MSI's Mystic Light SDK
+  Audio/
+    SystemVolumeController.cs COM interop wrapper for the Core Audio API (mute/unmute)
 installer/
   setup.iss                Inno Setup installer script
 .github/workflows/

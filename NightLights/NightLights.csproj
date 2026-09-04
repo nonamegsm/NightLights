@@ -59,6 +59,7 @@
     <Compile Include="DayProfileColorForm.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Audio\SystemVolumeController.cs" />
     <Compile Include="Rgb\FuryCrypto.cs" />
     <Compile Include="Rgb\FuryLightController.cs" />
     <Compile Include="Rgb\MysticLightController.cs" />
