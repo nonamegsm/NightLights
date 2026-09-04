@@ -13,7 +13,7 @@
 
 #define MyAppName "NightLights"
 #define MyAppPublisher "NightLights contributors"
-#define MyAppURL "https://github.com/YOUR_GITHUB_USERNAME/NightLights"
+#define MyAppURL "https://github.com/nonamegsm/NightLights"
 #define MyAppExeName "NightLights.exe"
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"

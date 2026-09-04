@@ -1,7 +1,7 @@
 # NightLights
 
-[![CI](https://github.com/YOUR_GITHUB_USERNAME/NightLights/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_GITHUB_USERNAME/NightLights/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/YOUR_GITHUB_USERNAME/NightLights)](https://github.com/YOUR_GITHUB_USERNAME/NightLights/releases/latest)
+[![CI](https://github.com/nonamegsm/NightLights/actions/workflows/ci.yml/badge.svg)](https://github.com/nonamegsm/NightLights/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/nonamegsm/NightLights)](https://github.com/nonamegsm/NightLights/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A tiny Windows tray app that turns off your PC's extra RGB lighting after sunset
@@ -19,7 +19,7 @@ latitude/longitude (NOAA solar formulas), so there's no network dependency at al
 ## Installation
 
 **Option 1 - Installer (recommended).** Grab `NightLights-Setup-*.exe` from the
-[latest release](https://github.com/YOUR_GITHUB_USERNAME/NightLights/releases/latest)
+[latest release](https://github.com/nonamegsm/NightLights/releases/latest)
 and run it. It installs per-user (no admin prompt, no UAC), adds Start Menu /
 optional desktop shortcuts, and a normal uninstaller in "Add or remove programs".
 
@@ -109,11 +109,14 @@ Right-click the tray icon:
   are active right now as "the daytime look" to restore at the next sunrise.
   (This also happens automatically at every sunset, just before the lights
   turn off.)
-- **Set day profile color...** - opens a color picker and sets that one solid
-  color as the day profile for both the DIMMs and the motherboard RGB (whichever
-  you have enabled), without needing to open FURY CTRL's own GUI. It applies
-  immediately if it's currently day, or stays correctly off if you pick a color
-  during the night - either way, it's what gets restored at the next sunrise.
+- **Set day profile color...** - opens a color + brightness picker and sets
+  that as the day profile for both the DIMMs and the motherboard RGB (whichever
+  you have enabled), without needing to open FURY CTRL's own GUI. Brightness is
+  sent explicitly on purpose - FURY CTRL's own service defaults a missing
+  brightness value to 0 (i.e. off), so this is what actually makes the color
+  visible. Applies immediately if it's currently day, or stays correctly off if
+  you pick a color during the night - either way, it's what gets restored at
+  the next sunrise.
 - **Start with Windows** - adds/removes a per-user startup entry (no admin
   needed).
 - **Settings...** - latitude/longitude, which lighting to control, and how
