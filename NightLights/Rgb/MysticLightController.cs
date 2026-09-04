@@ -171,6 +171,57 @@ namespace NightLights.Rgb
             }
         }
 
+        /// <summary>
+        /// Builds and caches a "day profile" that's a single solid color for every controllable
+        /// LED zone - the in-app alternative to "Save current lighting as day profile". Like the
+        /// FURY side, this only updates the cached snapshot; TrayContext follows up with
+        /// ForceReapplyAsync so the color is actually applied if it's day right now, or stays off
+        /// if it's night.
+        /// </summary>
+        public bool SetStaticColorProfile(uint r, uint g, uint b)
+        {
+            if (!EnsureInitialized()) return false;
+
+            try
+            {
+                int status = NativeMethods.MLAPI_GetDeviceInfo(out string[] devTypes, out string[] ledCounts);
+                if (status != 0 || devTypes == null)
+                {
+                    Logger.Log("MysticLight: GetDeviceInfo failed: " + NativeMethods.ErrorText(status));
+                    return false;
+                }
+
+                var leds = new List<LedRef>();
+                for (int d = 0; d < devTypes.Length; d++)
+                {
+                    string type = devTypes[d];
+                    if (!int.TryParse(ledCounts[d], out int count) || count <= 0) continue;
+
+                    for (uint i = 0; i < count; i++)
+                    {
+                        leds.Add(new LedRef { Type = type, Index = i, R = r, G = g, B = b });
+                    }
+                }
+
+                if (leds.Count == 0)
+                {
+                    Logger.Log("MysticLight: no controllable LEDs reported (can't set a day profile color).");
+                    return false;
+                }
+
+                Directory.CreateDirectory(AppSettings.AppDataFolder);
+                var serializer = new JavaScriptSerializer();
+                File.WriteAllText(CachePath, serializer.Serialize(leds));
+                Logger.Log($"MysticLight: day profile set to static color ({leds.Count} zone(s)).");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Log("MysticLight.SetStaticColorProfile failed: " + ex.Message);
+                return false;
+            }
+        }
+
         private List<LedRef> LoadSnapshotOrCaptureNow()
         {
             var existing = LoadSnapshot();

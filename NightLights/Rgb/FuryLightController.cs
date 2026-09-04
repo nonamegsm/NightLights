@@ -163,6 +163,57 @@ namespace NightLights.Rgb
             }
         }
 
+        /// <summary>
+        /// Builds and caches a "day profile" that's a single solid color for every known DIMM
+        /// slot - the in-app alternative to "Save current lighting as day profile" for when you
+        /// don't want to open FURY CTRL's own GUI just to pick a color. This only updates the
+        /// cached snapshot; it deliberately does not send anything to the DIMMs itself - the
+        /// caller (TrayContext) follows up with ForceReapplyAsync so the color actually gets
+        /// applied if it's day right now, or correctly stays off if it's night.
+        /// Mirrors ddr5_static_color_mode::set's field requirements recovered from
+        /// FuryControllerService.exe: mode "static_color", ctrl_mode "ctrl", and a
+        /// color_table with one [R,G,B] entry.
+        /// </summary>
+        public async Task<bool> SetStaticColorProfileAsync(int r, int g, int b)
+        {
+            try
+            {
+                var slots = LoadSnapshot();
+                if (slots == null)
+                {
+                    // No cache yet - fetch once so we know how many slots exist and their
+                    // "index" values (needed so set_dram_led addresses the right DIMM).
+                    if (!await RefreshSnapshotAsync().ConfigureAwait(false)) return false;
+                    slots = LoadSnapshot();
+                    if (slots == null) return false;
+                }
+
+                var colorSlots = new Dictionary<string, object>();
+                foreach (var kv in slots)
+                {
+                    var slot = new Dictionary<string, object>();
+                    if (kv.Value is IDictionary<string, object> src && src.ContainsKey("index"))
+                    {
+                        slot["index"] = src["index"];
+                    }
+                    slot["mode"] = "static_color";
+                    slot["ctrl_mode"] = "ctrl";
+                    slot["color_table"] = new List<object> { new List<object> { r, g, b } };
+                    colorSlots[kv.Key] = slot;
+                }
+
+                Directory.CreateDirectory(AppSettings.AppDataFolder);
+                File.WriteAllText(CachePath, _json.Serialize(colorSlots));
+                Logger.Log($"Fury: day profile set to static color ({r},{g},{b}).");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Log("Fury.SetStaticColorProfileAsync failed: " + ex.Message);
+                return false;
+            }
+        }
+
         private Dictionary<string, object> LoadSnapshot()
         {
             try

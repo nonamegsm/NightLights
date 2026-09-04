@@ -50,6 +50,8 @@ namespace NightLights
 
             menu.Items.Add(new ToolStripMenuItem("Save current lighting as day profile", null,
                 async (s, e) => await SaveDayProfileNowAsync()));
+            menu.Items.Add(new ToolStripMenuItem("Set day profile color...", null,
+                async (s, e) => await SetDayProfileColorAsync()));
 
             _runAtStartupItem = new ToolStripMenuItem("Start with Windows", null, (s, e) => ToggleRunAtStartup());
             _runAtStartupItem.Checked = _settings.RunAtStartup;
@@ -234,6 +236,29 @@ namespace NightLights
             if (_settings.ControlFuryDram) tasks.Add(_fury.RefreshSnapshotAsync());
             if (_settings.ControlMysticLight) tasks.Add(Task.Run(() => _mystic.RefreshSnapshot()));
             await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Lets you pick one solid color for the DIMMs/motherboard RGB right from the tray,
+        /// instead of having to go into FURY CTRL's own GUI to set up a daytime look. Only
+        /// updates the cached "day profile"; ForceReapplyAsync right after is what actually
+        /// turns it on (or correctly leaves it off, if it happens to be night right now).
+        /// </summary>
+        private async Task SetDayProfileColorAsync()
+        {
+            Color chosen;
+            using (var dlg = new ColorDialog { FullOpen = true, AnyColor = true })
+            {
+                if (dlg.ShowDialog() != DialogResult.OK) return;
+                chosen = dlg.Color;
+            }
+
+            var tasks = new System.Collections.Generic.List<Task>();
+            if (_settings.ControlFuryDram) tasks.Add(_fury.SetStaticColorProfileAsync(chosen.R, chosen.G, chosen.B));
+            if (_settings.ControlMysticLight) tasks.Add(Task.Run(() => _mystic.SetStaticColorProfile(chosen.R, chosen.G, chosen.B)));
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+
+            await ForceReapplyAsync().ConfigureAwait(false);
         }
 
         private void UpdateStatusText(bool isNight)

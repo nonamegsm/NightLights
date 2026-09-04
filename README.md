@@ -109,6 +109,11 @@ Right-click the tray icon:
   are active right now as "the daytime look" to restore at the next sunrise.
   (This also happens automatically at every sunset, just before the lights
   turn off.)
+- **Set day profile color...** - opens a color picker and sets that one solid
+  color as the day profile for both the DIMMs and the motherboard RGB (whichever
+  you have enabled), without needing to open FURY CTRL's own GUI. It applies
+  immediately if it's currently day, or stays correctly off if you pick a color
+  during the night - either way, it's what gets restored at the next sunrise.
 - **Start with Windows** - adds/removes a per-user startup entry (no admin
   needed).
 - **Settings...** - latitude/longitude, which lighting to control, and how

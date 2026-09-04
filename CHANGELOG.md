@@ -3,6 +3,25 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+- "Set day profile color..." tray menu item: pick one solid color from within the app to
+  use as the day profile for the DIMMs and/or motherboard RGB, without needing FURY CTRL's
+  own GUI.
+
+### Fixed
+- `AppSettings` is now `public` (was `internal`), fixing a build error where `SettingsForm`'s
+  public constructor/`Result` property exposed a less-accessible type.
+- "Force night/day now", "Follow sun automatically", and closing Settings now always actually
+  apply the resulting state (turn lights off, or restore the day profile) instead of sometimes
+  only re-snapshotting - previously, forcing day right after forcing night could silently do
+  nothing and overwrite the cached day profile with the "lights off" state.
+- While it's night, the "off" command is now re-sent on every poll (not just once at sunset),
+  and a resume-from-sleep listener re-asserts the current state a few seconds after wake -
+  FuryControllerService (and some MSI boards) can silently reload their own last-known
+  lighting profile on their own schedule, most noticeably after sleep.
+
 ## [1.0.0] - Unreleased
 
 ### Added
