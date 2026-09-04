@@ -18,15 +18,23 @@
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
 #endif
+; BuildArch selects which arch-specific build output to package - "x86" or "x64"
+; (matching the Release|x86 / Release|x64 project configs). Produces a separate,
+; distinctly-named installer per architecture; pass it via /DBuildArch=x86 (etc.)
+; when compiling. Defaults to x64 since that's what virtually everyone with RGB
+; DIMMs/motherboards is running.
+#ifndef BuildArch
+  #define BuildArch "x64"
+#endif
 #ifndef SourceBinDir
-  #define SourceBinDir "..\NightLights\NightLights\bin\Release"
+  #define SourceBinDir "..\NightLights\NightLights\bin\" + BuildArch + "\Release"
 #endif
 
 [Setup]
 AppId={{8C52BEE1-A68E-4566-9FDE-81E662D159A0}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppVerName={#MyAppName} {#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion} ({#BuildArch})
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
@@ -38,12 +46,19 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\dist
-OutputBaseFilename={#MyAppName}-Setup-{#MyAppVersion}
+OutputBaseFilename={#MyAppName}-Setup-{#BuildArch}-{#MyAppVersion}
 SetupIconFile=..\NightLights\NightLights\App.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+#if BuildArch == "x64"
+; Refuses to run on 32-bit Windows outright, rather than installing a 64-bit exe
+; that just won't start. (ArchitecturesAllowed, not ArchitecturesInstallIn64BitMode
+; with the newer "compatible" suffix - that one broke the very first release build
+; on this repo's Inno Setup version; this older/plainer directive is safe.)
+ArchitecturesAllowed=x64
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

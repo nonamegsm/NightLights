@@ -21,16 +21,21 @@ latitude/longitude (NOAA solar formulas), so there's no network dependency at al
 
 ## Installation
 
-**Option 1 - Installer (recommended).** Grab `NightLights-Setup-*.exe` from the
-[latest release](https://github.com/nonamegsm/NightLights/releases/latest)
-and run it. It installs per-user (no admin prompt, no UAC), adds Start Menu /
-optional desktop shortcuts, and a normal uninstaller in "Add or remove programs".
+**Installer (recommended).** Grab the installer matching your Windows install from the
+[latest release](https://github.com/nonamegsm/NightLights/releases/latest) and run it:
 
-**Option 2 - Portable.** Grab `NightLights-portable-*.zip` from the same
-release, unzip it anywhere, and run `NightLights.exe`. Nothing is installed or
-written outside that folder and `%AppData%\NightLights`.
+- `NightLights-Setup-x64-*.exe` - 64-bit Windows (almost every PC bought since ~2010;
+  also required if you want MSI motherboard RGB control, since MSI only ships an x64
+  Mystic Light SDK).
+- `NightLights-Setup-x86-*.exe` - 32-bit Windows.
 
-**Option 3 - Build from source.** See "Building it" below.
+It installs per-user (no admin prompt, no UAC), adds Start Menu / optional desktop
+shortcuts, and a normal uninstaller in "Add or remove programs". (The release page
+also always shows GitHub's own auto-generated "Source code (zip/tar.gz)" links under
+"Assets" - those are just the repo's source, not something to run; the two installer
+`.exe` files above are the actual downloads.)
+
+**Build from source** is the other option - see "Building it" below.
 
 Either way, on first launch NightLights adds nothing to Windows startup unless
 you tick "Start with Windows" from its tray menu yourself.
@@ -164,15 +169,18 @@ You don't need to do this to use NightLights - every tagged release is built
 automatically by GitHub Actions (`.github/workflows/release.yml`) and attached
 to the release page. To build one locally anyway:
 
-1. Build the app in Release from `NightLights.sln`.
+1. Build the app in Release, for the platform you want - in Visual Studio's
+   Configuration Manager, or `msbuild NightLights.sln /p:Configuration=Release /p:Platform=x64`
+   (or `x86`).
 2. Install [Inno Setup](https://jrsoftware.org/isinfo.php).
-3. Run `iscc installer\setup.iss` (or open it in the Inno Setup Compiler and
-   click Compile). The installer is written to `dist\`.
+3. Run `iscc installer\setup.iss /DBuildArch=x64` (or `/DBuildArch=x86`, matching
+   whichever platform you built) - or open it in the Inno Setup Compiler and click
+   Compile (defaults to x64). The installer is written to `dist\`.
 
 To cut a new release yourself (if you've forked this): push a tag matching
 `v*`, e.g. `git tag v1.0.1 && git push origin v1.0.1` - the release workflow
-builds the app, the installer, and a portable zip, and publishes them as a
-GitHub Release automatically.
+builds both x86 and x64, and publishes both installers as a GitHub Release
+automatically.
 
 ## Disclaimer & legal
 
@@ -240,6 +248,6 @@ installer/
   setup.iss                Inno Setup installer script
 .github/workflows/
   ci.yml                   build check on every push/PR
-  release.yml              builds + publishes the installer and portable zip on a version tag
+  release.yml              builds + publishes the x86 and x64 installers on a version tag
 LICENSE, CHANGELOG.md, CONTRIBUTING.md, .gitignore
 ```

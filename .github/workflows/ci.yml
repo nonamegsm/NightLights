@@ -17,6 +17,12 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        # AnyCPU (what CI has always built) plus the x86/x64 configs the release
+        # workflow actually ships, so a platform-specific compile break shows up
+        # here instead of only at release time.
+        platform: ["Any CPU", x86, x64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,5 +30,5 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build (Release)
-        run: msbuild NightLights.sln /t:Restore,Build /p:Configuration=Release /p:Platform="Any CPU" /m /verbosity:minimal
+      - name: Build (Release, ${{ matrix.platform }})
+        run: msbuild NightLights.sln /t:Restore,Build /p:Configuration=Release /p:Platform="${{ matrix.platform }}" /m /verbosity:minimal

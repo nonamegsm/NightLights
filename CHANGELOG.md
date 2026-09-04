@@ -5,6 +5,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- Release now builds and publishes separate `NightLights-Setup-x86-*.exe` and
+  `NightLights-Setup-x64-*.exe` installers (dropped the AnyCPU-only portable zip) - CI
+  now also compiles all three platform configs (Any CPU, x86, x64) on every push.
+
 ### Added
 - Optional "Silence system volume at night" setting: mutes Windows audio at sunset/"Force
   night" and unmutes it at sunrise/"Force day", via the public Core Audio API. Off by

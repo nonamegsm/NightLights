@@ -1,7 +1,7 @@
 name: Release
 
-# Builds the app, the Inno Setup installer, and a portable zip, then attaches
-# both to a GitHub Release - triggered by pushing a tag like "v1.0.0".
+# Builds separate x86 and x64 installers and attaches both to a GitHub Release -
+# triggered by pushing a tag like "v1.0.0".
 #
 #   git tag v1.0.0
 #   git push origin v1.0.0
@@ -21,8 +21,11 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x86, x64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,27 +54,50 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build (Release)
-        run: msbuild NightLights.sln /t:Restore,Build /p:Configuration=Release /p:Platform="Any CPU" /m /verbosity:minimal
+      - name: Build (Release, ${{ matrix.arch }})
+        run: msbuild NightLights.sln /t:Restore,Build /p:Configuration=Release /p:Platform=${{ matrix.arch }} /m /verbosity:minimal
 
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup -y --no-progress
 
-      - name: Build installer
+      - name: Build installer (${{ matrix.arch }})
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss "/DMyAppVersion=${{ steps.version.outputs.version }}"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss "/DMyAppVersion=${{ steps.version.outputs.version }}" "/DBuildArch=${{ matrix.arch }}"
 
-      - name: Build portable zip
-        shell: pwsh
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.arch }}
+          path: dist/NightLights-Setup-${{ matrix.arch }}-${{ steps.version.outputs.version }}.exe
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        shell: bash
         run: |
-          $stage = "dist\NightLights-portable-${{ steps.version.outputs.version }}"
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item "NightLights\NightLights\bin\Release\*" -Destination $stage -Recurse -Exclude *.pdb
-          Copy-Item README.md,LICENSE -Destination $stage
-          Compress-Archive -Path "$stage\*" -DestinationPath "dist\NightLights-portable-${{ steps.version.outputs.version }}.zip" -Force
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.version }}"
+          else
+            tag="${{ github.ref_name }}"
+          fi
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: dist
+          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -82,12 +108,14 @@ jobs:
           body: |
             See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
 
-            - **Installer** (`NightLights-Setup-*.exe`) - recommended. No admin rights needed; adds Start Menu/desktop shortcuts and a clean uninstaller.
-            - **Portable** (`NightLights-portable-*.zip`) - just unzip and run `NightLights.exe`; nothing is installed.
+            Pick the installer matching your Windows install (not sure? almost every PC bought since ~2010 is x64):
+
+            - **`NightLights-Setup-x64-*.exe`** - for 64-bit Windows (the vast majority of PCs, and required if you also want MSI motherboard RGB control - MSI only ships an x64 Mystic Light SDK).
+            - **`NightLights-Setup-x86-*.exe`** - for 32-bit Windows.
+
+            Either way: no admin rights needed, adds Start Menu/desktop shortcuts and a clean uninstaller.
 
             See the README for how to enable MSI motherboard RGB control (requires MSI's Mystic Light SDK DLL, not bundled here).
-          files: |
-            dist/NightLights-Setup-${{ steps.version.outputs.version }}.exe
-            dist/NightLights-portable-${{ steps.version.outputs.version }}.zip
+          files: dist/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
