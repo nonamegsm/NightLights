@@ -1,331 +1,245 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Win32;
 using NightLights.Audio;
+using NightLights.Power;
 using NightLights.Rgb;
 
 namespace NightLights
 {
-    /// <summary>
-    /// The whole app: a tray icon plus a polling timer. No main window - this is an
-    /// ApplicationContext so the process has no top-level form to show or accidentally close.
-    /// </summary>
     internal sealed class TrayContext : ApplicationContext
     {
         private readonly NotifyIcon _trayIcon;
         private readonly System.Windows.Forms.Timer _timer;
-        private readonly FuryLightController _fury = new FuryLightController();
-        private readonly MysticLightController _mystic = new MysticLightController();
+        private readonly Control _dispatcher = new Control();
+        private readonly SemaphoreSlim _operation = new SemaphoreSlim(1, 1);
+        private readonly ILightingModule _fury = new FuryLightingModule();
+        private readonly ILightingModule _mystic = new MysticLightingModule();
+        private readonly LightingCoordinator _lighting = new LightingCoordinator();
         private readonly SystemVolumeController _volume = new SystemVolumeController();
-
+        private readonly PowerPlanController _power = new PowerPlanController();
+        private readonly object _powerPolicyLock = new object();
+        private OpenRgbController _openRgb;
         private AppSettings _settings;
-        private bool? _lastAppliedIsNight; // null until the first tick decides
-        private bool _busy; // reentrancy guard - a tick that's still running skips the next one
-        private DateTime? _lastEnforcedUtc;
-        private System.Windows.Forms.Timer _resumeSettleTimer; // one-shot, armed after a sleep/resume
-
-        private ToolStripMenuItem _statusItem;
-        private ToolStripMenuItem _followSunItem;
-        private ToolStripMenuItem _forceNightItem;
-        private ToolStripMenuItem _forceDayItem;
-        private ToolStripMenuItem _runAtStartupItem;
+        private bool? _lastIsNight;
+        private volatile bool _exiting;
+        private System.Windows.Forms.Timer _resumeSettleTimer;
+        private readonly ToolStripMenuItem _statusItem, _lightingStatusItem, _powerStatusItem;
+        private readonly ToolStripMenuItem _followScheduleItem, _forceNightItem, _forceDayItem, _runAtStartupItem;
 
         public TrayContext()
         {
             _settings = AppSettings.Load();
-
+            _openRgb = new OpenRgbController(_settings.OpenRgbHost, _settings.OpenRgbPort);
+            // Create a UI-thread dispatch handle before subscribing to OS events.
+            var handle = _dispatcher.Handle;
             var menu = new ContextMenuStrip();
-
             _statusItem = new ToolStripMenuItem("Starting...") { Enabled = false };
-            menu.Items.Add(_statusItem);
-            menu.Items.Add(new ToolStripSeparator());
-
-            _followSunItem = new ToolStripMenuItem("Follow sun automatically", null, (s, e) => SetManualOverride(null));
-            _forceNightItem = new ToolStripMenuItem("Force night (lights off) now", null, (s, e) => SetManualOverride(true));
-            _forceDayItem = new ToolStripMenuItem("Force day (lights on) now", null, (s, e) => SetManualOverride(false));
-            menu.Items.Add(_followSunItem);
-            menu.Items.Add(_forceNightItem);
-            menu.Items.Add(_forceDayItem);
-            menu.Items.Add(new ToolStripSeparator());
-
+            _lightingStatusItem = new ToolStripMenuItem("Lighting: starting") { Enabled = false };
+            _powerStatusItem = new ToolStripMenuItem("Power saver: disabled") { Enabled = false };
+            menu.Items.AddRange(new ToolStripItem[] { _statusItem, _lightingStatusItem, _powerStatusItem, new ToolStripSeparator() });
+            _followScheduleItem = new ToolStripMenuItem("Follow schedule automatically", null, async (s, e) => await SetManualOverrideAsync(null));
+            _forceNightItem = new ToolStripMenuItem("Force night now", null, async (s, e) => await SetManualOverrideAsync(true));
+            _forceDayItem = new ToolStripMenuItem("Force day now", null, async (s, e) => await SetManualOverrideAsync(false));
+            menu.Items.AddRange(new ToolStripItem[] { _followScheduleItem, _forceNightItem, _forceDayItem, new ToolStripSeparator() });
             menu.Items.Add(new ToolStripMenuItem("Save current lighting as day profile", null,
-                async (s, e) => await SaveDayProfileNowAsync()));
-            menu.Items.Add(new ToolStripMenuItem("Set day profile color...", null,
-                async (s, e) => await SetDayProfileColorAsync()));
-
+                async (s, e) => await RunExclusiveAsync(() => _lighting.SaveAsync(EnabledLighting()))));
+            menu.Items.Add(new ToolStripMenuItem("Set day profile color...", null, async (s, e) => await SetDayProfileColorAsync()));
             _runAtStartupItem = new ToolStripMenuItem("Start with Windows", null, (s, e) => ToggleRunAtStartup());
-            _runAtStartupItem.Checked = _settings.RunAtStartup;
             menu.Items.Add(_runAtStartupItem);
-
-            menu.Items.Add(new ToolStripMenuItem("Settings...", null, (s, e) => OpenSettings()));
+            menu.Items.Add(new ToolStripMenuItem("Settings...", null, async (s, e) => await OpenSettingsAsync()));
             menu.Items.Add(new ToolStripMenuItem("Open log folder", null, (s, e) => OpenLogFolder()));
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem("Exit", null, (s, e) => ExitApp()));
+            menu.Items.Add(new ToolStripMenuItem("Exit", null, async (s, e) => await ExitAppAsync()));
 
-            _trayIcon = new NotifyIcon
-            {
-                Icon = LoadTrayIcon(),
-                Text = "NightLights",
-                ContextMenuStrip = menu,
-                Visible = true
-            };
-            _trayIcon.DoubleClick += (s, e) => OpenSettings();
-
+            _trayIcon = new NotifyIcon { Icon = LoadTrayIcon(), Text = "NightLights", ContextMenuStrip = menu, Visible = true };
+            _trayIcon.DoubleClick += async (s, e) => await OpenSettingsAsync();
             UpdateMenuChecks();
-
-            _timer = new System.Windows.Forms.Timer { Interval = Math.Max(15, _settings.PollIntervalSeconds) * 1000 };
+            _timer = new System.Windows.Forms.Timer { Interval = _settings.PollIntervalSeconds * 1000 };
             _timer.Tick += async (s, e) => await TickAsync();
             _timer.Start();
-
-            // FURY CTRL's own background service - and apparently the motherboard's EC too -
-            // can silently restore their last "kept" profile on their own (most noticeably
-            // right after the PC wakes from sleep), which quietly turns the lights back on
-            // without us touching anything. So on top of the regular poll (which keeps
-            // re-sending "off" every tick while it's night, not just once at sunset), we also
-            // listen for resume and re-assert a few seconds later once devices have settled.
             SystemEvents.PowerModeChanged += OnPowerModeChanged;
-
-            // Run one tick immediately instead of waiting for the first interval to elapse.
+            SystemEvents.SessionEnding += OnSessionEnding;
             _ = TickAsync();
         }
 
-        private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        private IReadOnlyList<ILightingModule> EnabledLighting()
         {
-            if (e.Mode != PowerModes.Resume) return;
-
-            Logger.Log("System resumed from sleep - will re-assert lighting state shortly.");
-
-            // Give FuryControllerService / the motherboard EC a few seconds to reinitialize
-            // before we send anything - sending immediately after resume tends to just fail.
-            _resumeSettleTimer?.Stop();
-            _resumeSettleTimer?.Dispose();
-            _resumeSettleTimer = new System.Windows.Forms.Timer { Interval = 10000 };
-            _resumeSettleTimer.Tick += async (s, args) =>
-            {
-                _resumeSettleTimer.Stop();
-                _resumeSettleTimer.Dispose();
-                _resumeSettleTimer = null;
-                await ForceReapplyAsync().ConfigureAwait(false);
-            };
-            _resumeSettleTimer.Start();
+            var modules = new List<ILightingModule>();
+            if (_settings.ControlFuryDram) modules.Add(_fury);
+            if (_settings.ControlMysticLight) modules.Add(_mystic);
+            if (_settings.ControlOpenRgb) modules.Add(_openRgb);
+            return modules;
         }
 
-        /// <summary>Unconditionally sends whatever the current day/night state should be
-        /// (turn off, or restore from the cached day profile) - never just a snapshot.
-        /// Used after resume-from-sleep, and by any tray action that changes the
-        /// day/night decision (Force night/day, Follow sun, closing Settings), so those
-        /// always actually apply rather than only reacting on the next natural transition.</summary>
-        private async Task ForceReapplyAsync()
+        private async Task RunExclusiveAsync(Func<Task> action, bool skipIfBusy = false)
         {
-            if (_busy) return;
-            _busy = true;
+            if (_exiting) return;
+            if (skipIfBusy)
+            {
+                if (!await _operation.WaitAsync(0)) return;
+            }
+            else await _operation.WaitAsync();
             try
             {
-                bool isNight = _settings.ManualNightOverride ?? ComputeIsNight(out _, out _);
-                UpdateStatusText(isNight);
-                await (isNight ? ApplyNightAsync() : ApplyDayAsync()).ConfigureAwait(false);
-                await ApplyVolumePolicyAsync(isNight).ConfigureAwait(false);
-                _lastAppliedIsNight = isNight;
-                _lastEnforcedUtc = DateTime.UtcNow;
+                if (!_exiting) await action();
             }
-            catch (Exception ex)
-            {
-                Logger.Log("ForceReapplyAsync failed: " + ex);
-            }
-            finally
-            {
-                _busy = false;
-            }
+            catch (Exception ex) { Logger.Log("NightLights operation failed: " + ex); }
+            finally { _operation.Release(); }
         }
 
-        private static Icon LoadTrayIcon()
+        private Task TickAsync() => RunExclusiveAsync(() => ApplyPolicyAsync(false), true);
+
+        private async Task ApplyPolicyAsync(bool force, bool captureBeforeNight = true)
         {
-            // Reuses the .exe's own icon (embedded via <ApplicationIcon> in the .csproj),
-            // so there's only one icon asset to maintain.
-            try { return Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
-            catch { return SystemIcons.Application; }
-        }
-
-        private async Task TickAsync()
-        {
-            if (_busy) return;
-            _busy = true;
-            try
-            {
-                bool isNight = _settings.ManualNightOverride ?? ComputeIsNight(out DateTime? sunrise, out DateTime? sunset);
-                UpdateStatusText(isNight);
-
-                if (_lastAppliedIsNight == null)
-                {
-                    // First tick after launch: apply the current state, but only snapshot a
-                    // "day profile" if we're actually starting out in daytime - never overwrite
-                    // a good baseline with what might already be an "all off" nighttime state.
-                    if (!isNight) await SaveDayProfileNowAsync().ConfigureAwait(false);
-                    else await ApplyNightAsync().ConfigureAwait(false);
-                    await ApplyVolumePolicyAsync(isNight).ConfigureAwait(false);
-                    _lastAppliedIsNight = isNight;
-                    _lastEnforcedUtc = DateTime.UtcNow;
-                }
-                else if (isNight != _lastAppliedIsNight.Value)
-                {
-                    if (isNight)
-                    {
-                        await _fury.RefreshSnapshotAsync().ConfigureAwait(false);
-                        _mystic.RefreshSnapshot();
-                        await ApplyNightAsync().ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await ApplyDayAsync().ConfigureAwait(false);
-                    }
-                    await ApplyVolumePolicyAsync(isNight).ConfigureAwait(false);
-                    _lastAppliedIsNight = isNight;
-                    _lastEnforcedUtc = DateTime.UtcNow;
-                }
-                else if (isNight)
-                {
-                    // Steady-state night: FURY CTRL's service (and some MSI boards) can
-                    // silently reload their own "last kept" profile on their own timeline -
-                    // not just on resume - so we keep re-sending "off" every poll instead of
-                    // trusting a single command from sunset to stick. This deliberately does
-                    // NOT touch the cached day-profile snapshot.
-                    await ApplyNightAsync().ConfigureAwait(false);
-                    _lastEnforcedUtc = DateTime.UtcNow;
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Log("TickAsync failed: " + ex);
-            }
-            finally
-            {
-                _busy = false;
-            }
-        }
-
-        private bool ComputeIsNight(out DateTime? sunrise, out DateTime? sunset)
-        {
-            var now = DateTime.Now;
-            var (rise, set) = SunTimes.Calculate(now, _settings.Latitude, _settings.Longitude);
-            sunrise = rise;
-            sunset = set;
-
-            if (rise == null && set == null) return false; // couldn't compute - default to "day" (safe: lights stay on)
-            if (set == null) return false;  // sun never sets today at this latitude/date
-            if (rise == null) return true;  // sun never rises today at this latitude/date
-
-            return now < rise.Value || now >= set.Value;
-        }
-
-        private async Task ApplyNightAsync()
-        {
-            var tasks = new System.Collections.Generic.List<Task>();
-            if (_settings.ControlFuryDram) tasks.Add(_fury.TurnOffAsync());
-            if (_settings.ControlMysticLight) tasks.Add(Task.Run(() => _mystic.TurnOff()));
-            await Task.WhenAll(tasks).ConfigureAwait(false);
-        }
-
-        /// <summary>
-        /// Mutes/unmutes system audio for a real day/night transition (first launch, sunset/
-        /// sunrise, or a manual trigger via ForceReapplyAsync) - deliberately NOT called from
-        /// TickAsync's steady-state re-assertion branch. Unlike the lighting, Windows doesn't
-        /// spontaneously un-mute itself, so re-sending "mute" on every poll would just fight
-        /// you if you manually unmute to hear something during the night; one mute per
-        /// transition is enough.
-        /// </summary>
-        private async Task ApplyVolumePolicyAsync(bool isNight)
-        {
-            if (!_settings.SilenceVolumeAtNight) return;
+            bool isNight = NightSchedule.IsNight(_settings, DateTime.Now);
+            // Run power policy on every poll: it owns transition tracking and retries,
+            // and recovers an outstanding restore even if the module is now disabled.
             await Task.Run(() =>
             {
-                if (isNight) _volume.Mute();
-                else _volume.Unmute();
-            }).ConfigureAwait(false);
-        }
-
-        private async Task ApplyDayAsync()
-        {
-            var tasks = new System.Collections.Generic.List<Task>();
-            if (_settings.ControlFuryDram) tasks.Add(_fury.RestoreAsync());
-            if (_settings.ControlMysticLight) tasks.Add(Task.Run(() => _mystic.Restore()));
-            await Task.WhenAll(tasks).ConfigureAwait(false);
-        }
-
-        private async Task SaveDayProfileNowAsync()
-        {
-            var tasks = new System.Collections.Generic.List<Task>();
-            if (_settings.ControlFuryDram) tasks.Add(_fury.RefreshSnapshotAsync());
-            if (_settings.ControlMysticLight) tasks.Add(Task.Run(() => _mystic.RefreshSnapshot()));
-            await Task.WhenAll(tasks).ConfigureAwait(false);
-        }
-
-        /// <summary>
-        /// Lets you pick one solid color and brightness for the DIMMs/motherboard RGB right
-        /// from the tray, instead of having to go into FURY CTRL's own GUI to set up a daytime
-        /// look. Brightness matters here, not just cosmetically: FuryControllerService reads it
-        /// straight off the request and defaults a missing value to 0 (i.e. off), so it has to
-        /// be sent explicitly or the color gets set but the LEDs stay dark. Only updates the
-        /// cached "day profile"; ForceReapplyAsync right after is what actually turns it on (or
-        /// correctly leaves it off, if it happens to be night right now).
-        /// </summary>
-        private async Task SetDayProfileColorAsync()
-        {
-            Color chosen;
-            int brightness;
-            using (var dlg = new DayProfileColorForm(Color.White, _settings.DayProfileBrightness))
+                lock (_powerPolicyLock)
+                {
+                    if (!_exiting) _power.Apply(_settings.PowerSaverAtNight, isNight);
+                }
+            });
+            if (_exiting) return;
+            await _lighting.ApplyAsync(EnabledLighting(), isNight, force, captureBeforeNight);
+            if (_settings.SilenceVolumeAtNight && (force || _lastIsNight != isNight))
             {
-                if (dlg.ShowDialog() != DialogResult.OK) return;
-                chosen = dlg.Color;
-                brightness = dlg.BrightnessPercent;
+                await Task.Run(() => { if (isNight) _volume.Mute(); else _volume.Unmute(); });
             }
-
-            _settings.DayProfileBrightness = brightness;
-            _settings.Save();
-
-            var tasks = new System.Collections.Generic.List<Task>();
-            if (_settings.ControlFuryDram) tasks.Add(_fury.SetStaticColorProfileAsync(chosen.R, chosen.G, chosen.B, brightness));
-            if (_settings.ControlMysticLight) tasks.Add(Task.Run(() => _mystic.SetStaticColorProfile(chosen.R, chosen.G, chosen.B, brightness)));
-            await Task.WhenAll(tasks).ConfigureAwait(false);
-
-            await ForceReapplyAsync().ConfigureAwait(false);
-        }
-
-        private void UpdateStatusText(bool isNight)
-        {
-            string mode = _settings.ManualNightOverride.HasValue
-                ? (isNight ? "Night (forced)" : "Day (forced)")
-                : (isNight ? "Night (auto)" : "Day (auto)");
-
+            _lastIsNight = isNight;
+            string mode = (isNight ? "Night" : "Day") + (_settings.ManualNightOverride.HasValue ? " (forced)" : " (auto)");
             _statusItem.Text = "NightLights - " + mode;
-
-            // Kept short: NotifyIcon.Text is capped at 63 characters by Windows.
-            string lastEnforced = _lastEnforcedUtc.HasValue
-                ? " @" + _lastEnforcedUtc.Value.ToLocalTime().ToString("HH:mm")
-                : "";
-            _trayIcon.Text = "NightLights - " + mode + lastEnforced;
+            _lightingStatusItem.Text = _lighting.Status;
+            _powerStatusItem.Text = _power.Status;
+            _trayIcon.Text = "NightLights - " + mode;
         }
 
-        private void SetManualOverride(bool? value)
+        private Task SetManualOverrideAsync(bool? value) => RunExclusiveAsync(async () =>
         {
             _settings.ManualNightOverride = value;
             _settings.Save();
             UpdateMenuChecks();
-            // ForceReapplyAsync (not a plain TickAsync) - it unconditionally sends the
-            // matching apply command. Resetting _lastAppliedIsNight and letting the next
-            // regular tick pick it up used to route through TickAsync's "first launch"
-            // branch, which for a day result only *snapshots* rather than restoring - so
-            // clicking "Force day now" right after "Force night now" looked like it did
-            // nothing (and, worse, re-snapshotted the lights-off state as the day profile).
-            _ = ForceReapplyAsync();
+            await ApplyPolicyAsync(true);
+        });
+
+        private async Task SetDayProfileColorAsync()
+        {
+            Color chosen;
+            int brightness;
+            using (var dialog = new DayProfileColorForm(Color.White, _settings.DayProfileBrightness))
+            {
+                if (dialog.ShowDialog() != DialogResult.OK) return;
+                chosen = dialog.Color;
+                brightness = dialog.BrightnessPercent;
+            }
+            await RunExclusiveAsync(async () =>
+            {
+                _settings.DayProfileBrightness = brightness;
+                _settings.Save();
+                await _lighting.SetColorAsync(EnabledLighting(), chosen.R, chosen.G, chosen.B, brightness);
+                await ApplyPolicyAsync(true, false);
+            });
+        }
+
+        private async Task OpenSettingsAsync()
+        {
+            AppSettings updated;
+            using (var form = new SettingsForm(_settings))
+            {
+                if (form.ShowDialog() != DialogResult.OK) return;
+                updated = form.Result;
+            }
+            await RunExclusiveAsync(async () =>
+            {
+                bool endpointChanged = !string.Equals(updated.OpenRgbHost, _settings.OpenRgbHost, StringComparison.OrdinalIgnoreCase)
+                    || updated.OpenRgbPort != _settings.OpenRgbPort;
+                // Release devices from a module before disabling it or changing its server.
+                if (_lastIsNight == true)
+                {
+                    if (_settings.ControlFuryDram && !updated.ControlFuryDram)
+                        await LightingCoordinator.RunAsync(_fury, m => m.RestoreAsync());
+                    if (_settings.ControlMysticLight && !updated.ControlMysticLight)
+                        await LightingCoordinator.RunAsync(_mystic, m => m.RestoreAsync());
+                    if (_settings.ControlOpenRgb && (!updated.ControlOpenRgb || endpointChanged))
+                        await LightingCoordinator.RunAsync(_openRgb, m => m.RestoreAsync());
+                }
+                _settings = updated;
+                if (endpointChanged) _openRgb = new OpenRgbController(_settings.OpenRgbHost, _settings.OpenRgbPort);
+                _settings.Save();
+                AppSettings.ApplyRunAtStartup(_settings.RunAtStartup);
+                _timer.Interval = _settings.PollIntervalSeconds * 1000;
+                UpdateMenuChecks();
+                await ApplyPolicyAsync(true);
+            });
+        }
+
+        private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode != PowerModes.Resume || _exiting) return;
+            try
+            {
+                _dispatcher.BeginInvoke((Action)(() =>
+                {
+                    if (_exiting) return;
+                    Logger.Log("System resumed - reapplying night policies after devices settle.");
+                    _resumeSettleTimer?.Stop();
+                    _resumeSettleTimer?.Dispose();
+                    _resumeSettleTimer = new System.Windows.Forms.Timer { Interval = 10000 };
+                    _resumeSettleTimer.Tick += async (s, args) =>
+                    {
+                        _resumeSettleTimer.Stop();
+                        _resumeSettleTimer.Dispose();
+                        _resumeSettleTimer = null;
+                        await RunExclusiveAsync(() => ApplyPolicyAsync(true));
+                    };
+                    _resumeSettleTimer.Start();
+                }));
+            }
+            catch (InvalidOperationException) { /* UI is already closing. */ }
+        }
+
+        private void OnSessionEnding(object sender, SessionEndingEventArgs e)
+        {
+            // Shutdown can end the message loop before an async exit completes. The
+            // controller also retains its recovery record if this attempt fails.
+            _exiting = true;
+            lock (_powerPolicyLock) _power.Restore();
+        }
+
+        private async Task ExitAppAsync()
+        {
+            if (_exiting) return;
+            _exiting = true;
+            _timer.Stop();
+            _resumeSettleTimer?.Stop();
+            await _operation.WaitAsync();
+            try { await Task.Run(() => _power.Restore()); }
+            finally
+            {
+                _operation.Release();
+                SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+                SystemEvents.SessionEnding -= OnSessionEnding;
+                _resumeSettleTimer?.Dispose();
+                _timer.Dispose();
+                _trayIcon.Visible = false;
+                _trayIcon.Dispose();
+                _dispatcher.Dispose();
+                Application.Exit();
+            }
         }
 
         private void UpdateMenuChecks()
         {
-            _followSunItem.Checked = _settings.ManualNightOverride == null;
+            _followScheduleItem.Checked = _settings.ManualNightOverride == null;
             _forceNightItem.Checked = _settings.ManualNightOverride == true;
             _forceDayItem.Checked = _settings.ManualNightOverride == false;
+            _runAtStartupItem.Checked = _settings.RunAtStartup;
         }
 
         private void ToggleRunAtStartup()
@@ -333,46 +247,23 @@ namespace NightLights
             _settings.RunAtStartup = !_settings.RunAtStartup;
             AppSettings.ApplyRunAtStartup(_settings.RunAtStartup);
             _settings.Save();
-            _runAtStartupItem.Checked = _settings.RunAtStartup;
+            UpdateMenuChecks();
         }
 
-        private void OpenSettings()
+        private static Icon LoadTrayIcon()
         {
-            using (var form = new SettingsForm(_settings))
-            {
-                if (form.ShowDialog() == DialogResult.OK)
-                {
-                    _settings = form.Result;
-                    _settings.Save();
-                    AppSettings.ApplyRunAtStartup(_settings.RunAtStartup);
-                    _timer.Interval = Math.Max(15, _settings.PollIntervalSeconds) * 1000;
-                    UpdateMenuChecks();
-                    _ = ForceReapplyAsync(); // same reasoning as SetManualOverride - see its comment
-                }
-            }
+            try { return Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
+            catch { return SystemIcons.Application; }
         }
 
-        private void OpenLogFolder()
+        private static void OpenLogFolder()
         {
             try
             {
                 System.IO.Directory.CreateDirectory(AppSettings.AppDataFolder);
                 System.Diagnostics.Process.Start("explorer.exe", AppSettings.AppDataFolder);
             }
-            catch (Exception ex)
-            {
-                Logger.Log("OpenLogFolder failed: " + ex.Message);
-            }
-        }
-
-        private void ExitApp()
-        {
-            SystemEvents.PowerModeChanged -= OnPowerModeChanged;
-            _resumeSettleTimer?.Stop();
-            _resumeSettleTimer?.Dispose();
-            _trayIcon.Visible = false;
-            _timer.Stop();
-            Application.Exit();
+            catch (Exception ex) { Logger.Log("OpenLogFolder failed: " + ex.Message); }
         }
     }
 }

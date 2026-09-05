@@ -13,10 +13,29 @@ installed, and build. No NuGet packages are required.
 
 - `NightLights/TrayContext.cs` - the tray icon, menu, and the day/night polling loop.
 - `NightLights/SunTimes.cs` - offline sunrise/sunset math.
+- `NightLights/NightSchedule.cs` - manual override and sun/quiet-hour schedule decisions.
 - `NightLights/Rgb/FuryCrypto.cs` / `FuryLightController.cs` - the Kingston FURY CTRL WebSocket client.
 - `NightLights/Rgb/MysticLightController.cs` - the MSI Mystic Light SDK wrapper.
+- `NightLights/Rgb/ILightingModule.cs` - the common contract and existing vendor adapters.
+- `NightLights/Rgb/LightingCoordinator.cs` - lighting transitions and restore retries.
+- `NightLights/Rgb/OpenRgbController.cs` - the optional OpenRGB SDK protocol adapter.
+- `NightLights/Power/` - reversible Windows Power saver policy and native API boundary.
+- `NightLights.Tests/` - dependency-free regression runner with simulated hardware.
 - `installer/setup.iss` - the Inno Setup installer script.
-- `.github/workflows/` - CI (build check) and release (installer + portable zip) automation.
+- `.github/workflows/` - CI (builds and regression tests) and release installer automation.
+
+## Testing and adding modules
+
+Run `msbuild NightLights.Tests/NightLights.Tests.csproj /p:Configuration=Release`,
+then `NightLights.Tests/bin/Release/NightLights.Tests.exe`. These tests use fake power
+APIs and simulated RGB servers, and do not require or change real hardware.
+
+New lighting providers implement `ILightingModule`; snapshot/color-profile methods
+save a daytime baseline, `TurnOffAsync` enforces darkness without replacing an existing
+baseline, and `RestoreAsync` reapplies it. Add an explicit opt-in setting, wire the
+provider into `TrayContext.EnabledLighting`, and include hardware-free failure and
+restore tests. Return `false` on failure so the tray can report it. Keep vendor/native
+calls out of the UI thread and avoid introducing package dependencies.
 
 ## If FURY CTRL changes its protocol
 

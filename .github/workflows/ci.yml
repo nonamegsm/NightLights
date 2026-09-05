@@ -1,8 +1,6 @@
 name: CI
 
-# Build-only sanity check on every push/PR - makes sure the .NET Framework 4.8
-# WinForms project still compiles. Doesn't publish anything; see release.yml
-# for that.
+# Build all shipping configurations and run hardware-free regression tests.
 on:
   push:
     branches: [ main ]
@@ -32,3 +30,11 @@ jobs:
 
       - name: Build (Release, ${{ matrix.platform }})
         run: msbuild NightLights.sln /t:Restore,Build /p:Configuration=Release /p:Platform="${{ matrix.platform }}" /m /verbosity:minimal
+
+      - name: Build regression tests
+        if: matrix.platform == 'Any CPU'
+        run: msbuild NightLights.Tests/NightLights.Tests.csproj /t:Build /p:Configuration=Release /m /verbosity:minimal
+
+      - name: Test schedules, module transitions, OpenRGB, and power recovery
+        if: matrix.platform == 'Any CPU'
+        run: ./NightLights.Tests/bin/Release/NightLights.Tests.exe

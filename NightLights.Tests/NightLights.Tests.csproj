@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{511A2E6F-4FA0-4464-B49C-B636D74BD3C1}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>NightLights.Tests</RootNamespace>
+    <AssemblyName>NightLights.Tests</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <LangVersion>7.3</LangVersion>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <WarningLevel>4</WarningLevel>
+    <Deterministic>true</Deterministic>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <ProjectReference Include="..\NightLights\NightLights.csproj">
+      <Project>{9B1B4C9C-9D3B-4B7B-9E2B-8B3F2C1A0A01}</Project>
+      <Name>NightLights</Name>
+    </ProjectReference>
+    <Compile Include="Program.cs" />
+    <Compile Include="ScheduleTests.cs" />
+    <Compile Include="LightingTests.cs" />
+    <Compile Include="SettingsTests.cs" />
+    <Compile Include="PowerTests.cs" />
+    <Compile Include="OpenRgbTests.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

@@ -12,21 +12,36 @@ namespace NightLights
     {
         /// <summary>
         /// Returns local sunrise and sunset for the given date and location.
-        /// Either value can be null for locations/dates with no sunrise or no sunset
-        /// (polar day/night) - callers should treat a null sunset as "always day"
-        /// and a null sunrise as "always night" for that date.
+        /// Either value can be null for locations/dates with no sunrise or no sunset.
+        /// Use IsNight for the policy decision; both events are absent during either
+        /// polar day or polar night, so null values alone cannot distinguish them.
         /// </summary>
         public static (DateTime? Sunrise, DateTime? Sunset) Calculate(DateTime localDate, double latitude, double longitude)
         {
             double utcOffsetHours = TimeZoneInfo.Local.GetUtcOffset(localDate).TotalHours;
 
-            DateTime? sunrise = SolarEvent(localDate, latitude, longitude, utcOffsetHours, isSunrise: true);
-            DateTime? sunset = SolarEvent(localDate, latitude, longitude, utcOffsetHours, isSunrise: false);
+            DateTime? sunrise = SolarEvent(localDate, latitude, longitude, utcOffsetHours, true, out _);
+            DateTime? sunset = SolarEvent(localDate, latitude, longitude, utcOffsetHours, false, out _);
             return (sunrise, sunset);
         }
 
-        private static DateTime? SolarEvent(DateTime date, double lat, double lon, double utcOffsetHours, bool isSunrise)
+        public static bool IsNight(DateTime localNow, double latitude, double longitude)
         {
+            double offset = TimeZoneInfo.Local.GetUtcOffset(localNow).TotalHours;
+            var rise = SolarEvent(localNow, latitude, longitude, offset, true, out bool polarNight);
+            var set = SolarEvent(localNow, latitude, longitude, offset, false, out _);
+            if (!rise.HasValue && !set.HasValue) return polarNight;
+            if (!rise.HasValue) return localNow >= set.Value;
+            if (!set.HasValue) return localNow < rise.Value;
+            // Locations in another time zone can have daylight spanning local midnight.
+            return rise.Value <= set.Value
+                ? localNow < rise.Value || localNow >= set.Value
+                : localNow >= set.Value && localNow < rise.Value;
+        }
+
+        private static DateTime? SolarEvent(DateTime date, double lat, double lon, double utcOffsetHours, bool isSunrise, out bool polarNight)
+        {
+            polarNight = false;
             const double zenith = 90.833; // official sunrise/sunset (includes atmospheric refraction + solar disk radius)
 
             int dayOfYear = date.DayOfYear;
@@ -57,7 +72,7 @@ namespace NightLights
 
             double cosH = (Cos(zenith) - (sinDec * Sin(lat))) / (cosDec * Cos(lat));
 
-            if (cosH > 1) return null;  // sun never rises this day at this location
+            if (cosH > 1) { polarNight = true; return null; }  // sun never rises here today
             if (cosH < -1) return null; // sun never sets this day at this location
 
             double h = isSunrise

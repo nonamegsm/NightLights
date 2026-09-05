@@ -27,6 +27,15 @@ namespace NightLights
         public bool ControlFuryDram { get; set; } = true;
         public bool ControlMysticLight { get; set; } = true;
 
+        public bool ControlOpenRgb { get; set; } = false;
+        public string OpenRgbHost { get; set; } = "127.0.0.1";
+        public int OpenRgbPort { get; set; } = 6742;
+
+        public NightScheduleMode ScheduleMode { get; set; } = NightScheduleMode.FollowSun;
+        public int QuietHoursStartMinutes { get; set; } = 22 * 60;
+        public int QuietHoursEndMinutes { get; set; } = 7 * 60;
+        public bool PowerSaverAtNight { get; set; } = false;
+
         // Off by default: silencing the whole PC is a bigger behavior change than dimming
         // some RGB, so this one's opt-in. When on, system audio is muted at sunset/"Force
         // night" and unmuted at sunrise/"Force day" - just once per transition (not re-sent
@@ -38,7 +47,7 @@ namespace NightLights
         // How often (seconds) we re-check whether it's day or night.
         public int PollIntervalSeconds { get; set; } = 60;
 
-        // Manual override: null = follow the sun automatically.
+        // Manual override: null = follow the configured automatic schedule.
         public bool? ManualNightOverride { get; set; } = null;
 
         // Last brightness (0-100) used by "Set day profile color...". Kingston FURY CTRL's own
@@ -54,7 +63,11 @@ namespace NightLights
                     var json = File.ReadAllText(SettingsPath);
                     var serializer = new JavaScriptSerializer();
                     var loaded = serializer.Deserialize<AppSettings>(json);
-                    if (loaded != null) return loaded;
+                    if (loaded != null)
+                    {
+                        loaded.Normalize();
+                        return loaded;
+                    }
                 }
             }
             catch (Exception ex)
@@ -69,6 +82,7 @@ namespace NightLights
         {
             try
             {
+                Normalize();
                 Directory.CreateDirectory(AppDataFolder);
                 var serializer = new JavaScriptSerializer();
                 File.WriteAllText(SettingsPath, serializer.Serialize(this));
@@ -78,6 +92,34 @@ namespace NightLights
                 Logger.Log("AppSettings.Save failed: " + ex);
             }
         }
+
+        public AppSettings Copy() => (AppSettings)MemberwiseClone();
+
+        // Settings may also be edited by hand, or come from an older release.
+        public void Normalize()
+        {
+            if (double.IsNaN(Latitude) || double.IsInfinity(Latitude)) Latitude = 52.2297;
+            if (double.IsNaN(Longitude) || double.IsInfinity(Longitude)) Longitude = 21.0122;
+            Latitude = Math.Max(-90, Math.Min(90, Latitude));
+            Longitude = Math.Max(-180, Math.Min(180, Longitude));
+            PollIntervalSeconds = Math.Max(15, Math.Min(3600, PollIntervalSeconds));
+            DayProfileBrightness = Math.Max(0, Math.Min(100, DayProfileBrightness));
+            if (!Enum.IsDefined(typeof(NightScheduleMode), ScheduleMode)) ScheduleMode = NightScheduleMode.FollowSun;
+            QuietHoursStartMinutes = Math.Max(0, Math.Min(1439, QuietHoursStartMinutes));
+            QuietHoursEndMinutes = Math.Max(0, Math.Min(1439, QuietHoursEndMinutes));
+            if (QuietHoursStartMinutes == QuietHoursEndMinutes)
+            {
+                QuietHoursStartMinutes = 22 * 60;
+                QuietHoursEndMinutes = 7 * 60;
+            }
+            OpenRgbHost = (OpenRgbHost ?? "").Trim();
+            if (!IsValidOpenRgbHost(OpenRgbHost)) OpenRgbHost = "127.0.0.1";
+            if (OpenRgbPort < 1 || OpenRgbPort > 65535) OpenRgbPort = 6742;
+        }
+
+        internal static bool IsValidOpenRgbHost(string host) =>
+            !string.IsNullOrWhiteSpace(host) && host.Length <= 253 &&
+            Uri.CheckHostName(host) != UriHostNameType.Unknown;
 
         // --- Run-at-Windows-startup, via the per-user Run key (no admin rights needed) ---
 

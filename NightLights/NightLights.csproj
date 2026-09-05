@@ -78,6 +78,7 @@
     <Compile Include="TrayContext.cs" />
     <Compile Include="AppSettings.cs" />
     <Compile Include="SunTimes.cs" />
+    <Compile Include="NightSchedule.cs" />
     <Compile Include="DayProfileColorForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -85,6 +86,13 @@
     <Compile Include="Rgb\FuryCrypto.cs" />
     <Compile Include="Rgb\FuryLightController.cs" />
     <Compile Include="Rgb\MysticLightController.cs" />
+    <Compile Include="Rgb\ILightingModule.cs" />
+    <Compile Include="Rgb\LightingCoordinator.cs" />
+    <Compile Include="Rgb\OpenRgbController.cs" />
+    <Compile Include="Power\IPowerSchemeApi.cs" />
+    <Compile Include="Power\WindowsPowerSchemeApi.cs" />
+    <Compile Include="Power\PowerPlanController.cs" />
+    <Compile Include="Power\PowerPlanRestoreState.cs" />
     <Compile Include="SettingsForm.cs">
       <SubType>Form</SubType>
     </Compile>

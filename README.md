@@ -4,20 +4,26 @@
 [![Latest release](https://img.shields.io/github/v/release/nonamegsm/NightLights)](https://github.com/nonamegsm/NightLights/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A tiny Windows tray app that turns off your PC's extra RGB lighting after sunset
-and turns it back on at sunrise - specifically:
+A small Windows tray app that reduces nighttime RGB light and can switch your PC
+to Windows Power saver. Follow sunset/sunrise, set quiet hours, or combine both.
+Choose which modules to enable:
 
 - **Kingston FURY DIMM lighting**, controlled through FURY CTRL's own background
   service (`FuryControllerService.exe`) over its local WebSocket API.
 - **MSI motherboard RGB ("Mystic Light")**, controlled through MSI's official
   Mystic Light SDK.
+- **OpenRGB devices** (optional) through an OpenRGB SDK server: discover compatible
+  devices, switch lighting off at night, and restore saved colors/modes during the day.
+- **Windows Power saver** (optional) - remembers the active power plan before night
+  mode and restores it when night mode ends.
 - **System volume** (optional, off by default) - mutes Windows audio at night and
   unmutes it again at sunrise, via the same public Core Audio API the volume
   mixer's own mute button uses.
 
 No admin rights needed, nothing is installed as a service, and there's no visible
 window - just a tray icon. Sunrise/sunset is computed fully offline from your
-latitude/longitude (NOAA solar formulas), so there's no network dependency at all.
+latitude/longitude (NOAA solar formulas). Scheduling needs no internet connection;
+OpenRGB connects only to the SDK server address you configure (localhost by default).
 
 ## Installation
 
@@ -42,8 +48,8 @@ you tick "Start with Windows" from its tray menu yourself.
 
 ## Why it works this way
 
-`OpenRGB` didn't reliably see these devices, and neither Kingston nor (for the
-open API) MSI ship a lightweight "just turn it off" command-line tool. So:
+The original Kingston/MSI integrations cover devices that OpenRGB did not reliably
+detect. They remain available alongside the optional OpenRGB module:
 
 - **MSI side**: uses MSI's own, publicly documented Mystic Light SDK
   (`MysticLight_SDK.dll` + the P/Invoke calls below) - this is the same SDK
@@ -105,12 +111,58 @@ Nothing to set up - as long as FURY CTRL is installed (its background service
 starts automatically with Windows), NightLights will find it on
 `127.0.0.1:55599`.
 
+## OpenRGB module (optional)
+
+1. Install [OpenRGB](https://openrgb.org/) and check that it controls your devices.
+2. Start its **SDK Server**, normally at `127.0.0.1:6742`.
+3. In NightLights **Settings > Lighting modules**, enable **OpenRGB devices**.
+   Set the server host/IP and port, then use **Test connection / list devices**.
+4. Disable the FURY or MSI module if OpenRGB is also controlling the same hardware.
+   The OpenRGB module applies to all compatible devices on the chosen server.
+5. Save your daytime lighting using the tray's **Save current lighting as day profile**
+   or **Set day profile color...** command.
+
+NightLights uses SDK protocol 3 (OpenRGB 0.7 or later). It supports devices with a
+usable direct/custom/static lighting mode. Hardware detection and device-specific
+drivers remain OpenRGB's responsibility; unsupported devices are reported in the log.
+Day profiles are stored separately for each server under `%AppData%\NightLights`,
+and devices are matched by identity when restoring after the server's device order changes.
+Keep other RGB apps/effect plugins from overriding the same devices.
+
+## Nighttime energy saving and quiet hours
+
+In **Settings > Night schedule**, choose one of:
+
+- **Sunset to sunrise**: uses your coordinates, including polar day/night.
+- **Quiet hours**: fixed local start/end times, including periods that cross midnight
+  (for example, 22:00 to 07:00). Start is inclusive; end is exclusive.
+- **Sunset to sunrise or quiet hours**: night mode stays active while either applies.
+
+In **Settings > Energy and startup**, enable **Use Windows Power saver during night
+mode**. It is off by default. At the next night decision the app records your current
+plan and activates the existing Windows Power saver plan. When night mode ends,
+when you disable the setting, or when you exit NightLights, it restores the saved
+plan. Recovery information is kept on disk across restarts and failed restore attempts.
+If you manually choose another power plan at night, NightLights respects that choice.
+
+This uses the plan's existing display/sleep timeouts; it does not change those values,
+request immediate sleep/hibernate, or wake a sleeping PC at sunrise. After resume it
+rechecks the schedule and restores the plan if daytime has begun. A PC without an
+available Power saver plan, or with policy restrictions, reports the failure in the
+tray menu/log; lighting modules continue working. Power changes use Microsoft's
+[PowerGetActiveScheme](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powergetactivescheme)
+and [PowerSetActiveScheme](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powersetactivescheme) APIs.
+
+Turning decorative RGB off reduces unwanted nighttime light. Actual electricity
+savings depend on the hardware, workload, and power-plan configuration; NightLights
+does not estimate watts, carbon emissions, or ambient light levels.
+
 ## Using it
 
 Right-click the tray icon:
 
-- **Follow sun automatically** - the default; uses your configured
-  latitude/longitude.
+- **Follow schedule automatically** - uses your configured sun/quiet-hour schedule;
+  sunset to sunrise is the default.
 - **Force night / Force day now** - manual override, e.g. if you want the
   lights off right now regardless of the clock.
 - **Save current lighting as day profile** - snapshots whatever colors/effects
@@ -127,8 +179,9 @@ Right-click the tray icon:
   the next sunrise.
 - **Start with Windows** - adds/removes a per-user startup entry (no admin
   needed).
-- **Settings...** - latitude/longitude, which lighting (and optionally system
-  volume) to control, and how often to check (default: every 60 seconds).
+- **Settings...** - schedule and coordinates, lighting modules, nighttime power/audio
+  options, startup, and how often to check (default: every 60 seconds).
+- The tray menu also shows lighting availability and the current power-module status.
 - **Open log folder** - `%AppData%\NightLights\NightLights.log`, plus the
   cached "day profile" snapshots, for troubleshooting.
 
@@ -236,12 +289,19 @@ NightLights/
   TrayContext.cs           tray icon, menu, day/night polling loop
   AppSettings.cs           settings persisted to %AppData%\NightLights\settings.json
   SunTimes.cs               offline NOAA sunrise/sunset calculator
+  NightSchedule.cs          sun / quiet-hour / combined automatic policy
   SettingsForm.cs/.Designer.cs   the Settings dialog
   DayProfileColorForm.cs    color + brightness picker for "Set day profile color..."
   Rgb/
     FuryCrypto.cs            AES-256 wire format used by FuryControllerService
     FuryLightController.cs   WebSocket client for FuryControllerService
     MysticLightController.cs P/Invoke wrapper for MSI's Mystic Light SDK
+    ILightingModule.cs       common lighting module contract and vendor adapters
+    LightingCoordinator.cs   snapshot, transition, night enforcement, restore retries
+    OpenRgbController.cs     optional OpenRGB TCP SDK client
+  Power/
+    PowerPlanController.cs   reversible night Power saver policy and recovery state
+    WindowsPowerSchemeApi.cs Windows power-plan API adapter
   Audio/
     SystemVolumeController.cs COM interop wrapper for the Core Audio API (mute/unmute)
 installer/
@@ -251,3 +311,15 @@ installer/
   release.yml              builds + publishes the x86 and x64 installers on a version tag
 LICENSE, CHANGELOG.md, CONTRIBUTING.md, .gitignore
 ```
+
+Hardware-free regression tests live in `NightLights.Tests`. From a Visual Studio
+Developer PowerShell, run:
+
+```powershell
+msbuild NightLights.Tests/NightLights.Tests.csproj /p:Configuration=Release
+./NightLights.Tests/bin/Release/NightLights.Tests.exe
+```
+
+They exercise schedules, settings, lighting transitions, OpenRGB protocol behavior,
+and power-plan recovery using fake devices/APIs. They never switch the host's power
+plan or send commands to physical RGB devices.

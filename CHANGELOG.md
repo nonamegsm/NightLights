@@ -3,6 +3,25 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.1.0] - 2026-09-05
+
+### Added
+- Optional OpenRGB SDK lighting module with device discovery, night-off commands,
+  server-specific day profiles, and identity-based color/mode restoration.
+- Quiet-hour and combined sun/quiet-hour schedules, with local-time midnight support.
+- Optional Windows Power saver at night, preserving and restoring the original plan
+  at daytime/disable/exit with durable recovery state and respect for manual changes.
+- Tabbed Settings for schedules, lighting modules, and energy/startup options.
+- Hardware-free regression test runner and CI coverage for scheduling, settings,
+  lighting transitions, power recovery, and the OpenRGB protocol.
+
+### Fixed
+- Manual night transitions now save the daytime profile before lights are turned off.
+- Tray actions are serialized and UI updates remain on the Windows Forms thread.
+- Failed daytime lighting restores retry on subsequent polls.
+- Polar night is distinguished from polar day; settings loaded from JSON are bounded
+  before being used by controls and timers.
+
 ## [1.0.1] - 2026-09-05
 
 ### Changed
