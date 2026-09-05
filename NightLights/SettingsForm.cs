@@ -8,6 +8,7 @@ namespace NightLights
     public partial class SettingsForm : Form
     {
         public AppSettings Result { get; private set; }
+        private bool _probingOpenRgb;
 
         public SettingsForm(AppSettings current)
         {
@@ -42,13 +43,14 @@ namespace NightLights
             if (timeQuietStart == null || txtOpenRgbHost == null) return;
             timeQuietStart.Enabled = timeQuietEnd.Enabled = cmbSchedule.SelectedIndex != 0;
             numLatitude.Enabled = numLongitude.Enabled = cmbSchedule.SelectedIndex != 1;
-            txtOpenRgbHost.Enabled = numOpenRgbPort.Enabled = btnProbeOpenRgb.Enabled = chkOpenRgb.Checked;
+            txtOpenRgbHost.Enabled = numOpenRgbPort.Enabled = btnProbeOpenRgb.Enabled = chkOpenRgb.Checked && !_probingOpenRgb;
         }
 
         private async Task ProbeOpenRgbAsync()
         {
-            if (!ValidateOpenRgbHost()) return;
-            btnProbeOpenRgb.Enabled = false;
+            if (_probingOpenRgb || !ValidateOpenRgbHost()) return;
+            _probingOpenRgb = true;
+            UpdateEnabledControls();
             txtOpenRgbStatus.Text = "Connecting to OpenRGB...";
             try
             {
@@ -62,7 +64,25 @@ namespace NightLights
             }
             finally
             {
+                _probingOpenRgb = false;
                 if (!IsDisposed) UpdateEnabledControls();
+            }
+        }
+
+        private void OpenHardwareGuide()
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "https://github.com/nonamegsm/NightLights/blob/main/HARDWARE.md",
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Log("Could not open hardware guide: " + ex.Message);
+                MessageBox.Show(this, "The hardware guide is included as HARDWARE.md beside NightLights.exe and is also available in the GitHub repository.", "Supported hardware", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 

@@ -23,6 +23,9 @@ namespace NightLights.Tests
             ProbeRejectsMalformedProtocolReplies().GetAwaiter().GetResult();
             ProbeRejectsTopologyUpdateAsReply().GetAwaiter().GetResult();
             StaticProfileScalesColorButUsesFullModeBrightness().GetAwaiter().GetResult();
+            CapabilityBasedModesBlackOutAndRestore().GetAwaiter().GetResult();
+            MixedDeviceReportAndPartialControlAreAccurate().GetAwaiter().GetResult();
+            MissingIdentityCannotCreateRestoreBaseline().GetAwaiter().GetResult();
             LoopbackProtocol3NoAckAndFragmentedReplies().GetAwaiter().GetResult();
             TestAssert.Throws<InvalidDataException>(() => new OpenRgbController.PacketReader(new byte[] { 1 }, 1024).ReadUInt32(), "short packet is rejected");
         }
@@ -53,11 +56,11 @@ namespace NightLights.Tests
 
             TestAssert.True(ok, "turn off succeeds without ACKs");
             var rgbWrites = script.Writes.Where(w => w.PacketId == 1101 || w.PacketId == 1100 || w.PacketId == 1050).ToList();
-            TestAssert.Equal(1101, rgbWrites[0].PacketId, "static/direct mode is explicitly blacked first");
-            TestAssert.Equal(1100, rgbWrites[1].PacketId, "custom mode request is fire-and-forget");
-            TestAssert.Equal(1050, rgbWrites[2].PacketId, "LED update request is fire-and-forget");
+            TestAssert.Equal(1050, rgbWrites[0].PacketId, "LED buffer is updated before applying the color mode");
+            TestAssert.Equal(1101, rgbWrites[1].PacketId, "explicit mode is selected last without relying on SetCustomMode");
+            TestAssert.Equal(2, rgbWrites.Count, "only the LED and explicit mode writes are needed");
 
-            var reader = new OpenRgbController.PacketReader(rgbWrites[2].Payload, 1024);
+            var reader = new OpenRgbController.PacketReader(rgbWrites[0].Payload, 1024);
             TestAssert.Equal(14u, reader.ReadUInt32(), "LED update size prefix");
             TestAssert.Equal((ushort)2, reader.ReadUInt16(), "LED color count");
             TestAssert.Equal(0u, reader.ReadUInt32(), "first LED off color");
@@ -145,6 +148,75 @@ namespace NightLights.Tests
             string json = File.ReadAllText(snapshotPath);
             TestAssert.True(json.Contains("661810"), "snapshot contains scaled packed RGB value");
             TestAssert.True(json.Contains("\"Brightness\":100"), "snapshot uses full mode brightness after scaling color");
+        }
+
+        private static async Task CapabilityBasedModesBlackOutAndRestore()
+        {
+            foreach (uint flags in new[] { 1u << 5, 1u << 6 })
+            {
+                var device = SampleDevice("Unusual controller", "Example", "new-mode", 0x00010203u);
+                device.Modes.RemoveAt(1);
+                device.Modes[0].Name = "Vendor configurable effect";
+                device.Modes[0].Flags = flags | (1u << 7);
+                device.Modes[0].ColorMode = 3;
+                device.Modes[0].ColorsMin = 2;
+                device.Modes[0].ColorsMax = 4;
+                var transport = new StatefulOpenRgbTransport(new[] { device });
+                string path = TempSnapshotPath();
+                var controller = new OpenRgbController("127.0.0.1", 6742, path, () => transport);
+                try
+                {
+                    TestAssert.True(await controller.RefreshSnapshotAsync(), "nonstandard mode baseline saved");
+                    TestAssert.True(await controller.TurnOffAsync(), "SDK color capabilities allow blackout with nonstandard names");
+                    TestAssert.True(device.Colors.All(c => c == 0), "all LED colors black");
+                    TestAssert.Equal(flags == (1u << 5) ? 1u : 2u, device.Modes[0].ColorMode, "random color selection explicitly disabled");
+                    if (flags == (1u << 6)) TestAssert.Equal(2, device.Modes[0].Colors.Count, "hardware's palette minimum honored");
+                    TestAssert.True(await controller.RestoreAsync(), "original nonstandard mode restored");
+                    TestAssert.Equal(3u, device.Modes[0].ColorMode, "original effect settings preserved for day");
+                    TestAssert.True(device.Colors.All(c => c == 0x00010203u), "original colors restored");
+                    TestAssert.True(await controller.SetStaticColorProfileAsync(100, 50, 20, 50), "day color available through SDK capability");
+                    TestAssert.True(await controller.RestoreAsync(), "chosen day color can be applied");
+                    TestAssert.Equal(661810u, device.Colors[0], "brightness is applied once");
+                    TestAssert.Equal(100u, device.Modes[0].Brightness, "mode brightness remains full after color scaling");
+                }
+                finally { File.Delete(path); }
+            }
+        }
+
+        private static async Task MixedDeviceReportAndPartialControlAreAccurate()
+        {
+            var good = SampleDevice("Keyboard", "Example", "good", 0x00010203u);
+            var bad = SampleDevice("Effects only", "Example", "bad", 0);
+            bad.Modes = new List<SampleOpenRgbMode> { new SampleOpenRgbMode { Name = "Rainbow", Flags = 1u << 7, ColorMode = 3, Colors = new List<uint> { 0x00ffffff } } };
+            var transport = new StatefulOpenRgbTransport(new[] { good, bad });
+            string path = TempSnapshotPath();
+            var controller = new OpenRgbController("127.0.0.1", 6742, path, () => transport);
+            try
+            {
+                string report = await controller.ProbeAsync();
+                TestAssert.True(report.Contains("2 device(s), 1 controllable"), "mixed server reports actual compatible count");
+                TestAssert.True(report.Contains("Effects only") && report.Contains("Unavailable:"), "unsupported device is individually explained");
+                TestAssert.True(await controller.RefreshSnapshotAsync(), "mixed server baseline saved");
+                TestAssert.True(!await controller.TurnOffAsync(), "black cached buffers don't imply random hardware effects are off");
+                TestAssert.True(good.Colors.All(c => c == 0), "compatible sibling still turned off");
+                TestAssert.True(transport.Writes.Where(w => w.PacketId >= 1000).All(w => w.DeviceId == 0), "incompatible device receives no hardware writes");
+                TestAssert.True(!await controller.SetStaticColorProfileAsync(100, 50, 20, 50), "partially configured server reports partial result");
+                TestAssert.True(File.ReadAllText(path).Contains("Effects only"), "color profile updates preserve unsupported-device baseline");
+            }
+            finally { File.Delete(path); }
+        }
+
+        private static async Task MissingIdentityCannotCreateRestoreBaseline()
+        {
+            var device = SampleDevice(null, "Vendor only", null, 1);
+            device.Location = null;
+            var transport = new StatefulOpenRgbTransport(new[] { device });
+            string path = TempSnapshotPath();
+            var controller = new OpenRgbController("127.0.0.1", 6742, path, () => transport);
+            TestAssert.True(!await controller.RefreshSnapshotAsync(), "anonymous hardware has no restorable identity");
+            TestAssert.True(!await controller.TurnOffAsync(), "anonymous hardware is not blacked out");
+            TestAssert.True(!File.Exists(path), "anonymous device cannot create a restore file");
+            TestAssert.True(transport.Writes.All(w => w.PacketId < 1000), "identity failure causes no RGB writes");
         }
 
         private static async Task RestoreSkipsAmbiguousDuplicateIdentities()
@@ -284,13 +356,13 @@ namespace NightLights.Tests
             {
                 var list = devices.ToList();
                 var off = list.Select(d => d.WithColors(0)).ToList();
+                foreach (var device in off) device.ActiveModeIndex = 1;
                 var transport = NewTransport();
                 transport.EnqueueDeviceList(list);
                 for (int i = 0; i < list.Count; i++)
                 {
-                    transport.ExpectWrite(1101);
-                    transport.ExpectWrite(1100);
                     transport.ExpectWrite(1050);
+                    transport.ExpectWrite(1101);
                     transport.EnqueueDevice((uint)i, off[i]);
                 }
                 _transports.Enqueue(transport);
@@ -457,9 +529,24 @@ namespace NightLights.Tests
                                     await WritePacketFragmentedAsync(stream, 0, 0, Body(w => w.WriteUInt32((uint)_devices.Count))).ConfigureAwait(false);
                                 else if (request.PacketId == 1)
                                 {
-                                    var device = readDataRequests < 2 ? _devices[(int)request.DeviceId] : _devices[(int)request.DeviceId].WithColors(0);
+                                    var device = _devices[(int)request.DeviceId];
                                     await WritePacketFragmentedAsync(stream, request.DeviceId, 1, BuildDevicePayload(device)).ConfigureAwait(false);
                                     readDataRequests++;
+                                }
+                                else if (request.PacketId == 1050)
+                                {
+                                    var reader = new OpenRgbController.PacketReader(request.Payload, 1024);
+                                    reader.ReadUInt32();
+                                    int count = reader.ReadUInt16();
+                                    _devices[(int)request.DeviceId].Colors = Enumerable.Range(0, count).Select(_ => reader.ReadUInt32()).ToList();
+                                }
+                                else if (request.PacketId == 1101)
+                                {
+                                    var reader = new OpenRgbController.PacketReader(request.Payload, 1024);
+                                    reader.ReadUInt32();
+                                    int mode = reader.ReadInt32();
+                                    _devices[(int)request.DeviceId].ActiveModeIndex = mode;
+                                    _devices[(int)request.DeviceId].Modes[mode] = ReadSampleMode(reader);
                                 }
                             }
                         }
@@ -616,6 +703,9 @@ namespace NightLights.Tests
         {
             public string Name;
             public int Value;
+            public uint Flags;
+            public uint ColorsMin = 1;
+            public uint ColorsMax = 16;
             public uint Speed;
             public uint Direction;
             public uint ColorMode;
@@ -630,6 +720,9 @@ namespace NightLights.Tests
                 {
                     Name = Name,
                     Value = Value,
+                    Flags = Flags,
+                    ColorsMin = ColorsMin,
+                    ColorsMax = ColorsMax,
                     Speed = Speed,
                     Direction = Direction,
                     ColorMode = ColorMode,
@@ -676,13 +769,13 @@ namespace NightLights.Tests
         {
             w.WriteString(mode.Name);
             w.WriteInt32(mode.Value);
-            w.WriteUInt32(0);
+            w.WriteUInt32(mode.Flags);
             w.WriteUInt32(0);
             w.WriteUInt32(100);
             w.WriteUInt32(mode.BrightnessMin);
             w.WriteUInt32(mode.BrightnessMax);
-            w.WriteUInt32(1);
-            w.WriteUInt32(16);
+            w.WriteUInt32(mode.ColorsMin);
+            w.WriteUInt32(mode.ColorsMax);
             w.WriteUInt32(mode.Speed);
             w.WriteUInt32(mode.Brightness);
             w.WriteUInt32(mode.Direction);
@@ -696,13 +789,13 @@ namespace NightLights.Tests
             var mode = new SampleOpenRgbMode();
             mode.Name = reader.ReadString();
             mode.Value = reader.ReadInt32();
-            reader.ReadUInt32();
+            mode.Flags = reader.ReadUInt32();
             reader.ReadUInt32();
             reader.ReadUInt32();
             mode.BrightnessMin = reader.ReadUInt32();
             mode.BrightnessMax = reader.ReadUInt32();
-            reader.ReadUInt32();
-            reader.ReadUInt32();
+            mode.ColorsMin = reader.ReadUInt32();
+            mode.ColorsMax = reader.ReadUInt32();
             mode.Speed = reader.ReadUInt32();
             mode.Brightness = reader.ReadUInt32();
             mode.Direction = reader.ReadUInt32();

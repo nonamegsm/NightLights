@@ -16,7 +16,7 @@
 #define MyAppURL "https://github.com/nonamegsm/NightLights"
 #define MyAppExeName "NightLights.exe"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.1.0"
+  #define MyAppVersion "1.1.1"
 #endif
 ; BuildArch selects which arch-specific build output to package - "x86" or "x64"
 ; (matching the Release|x86 / Release|x64 project configs). Produces a separate,
@@ -69,6 +69,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Source: "{#SourceBinDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceBinDir}\{#MyAppName}.exe.config"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\HARDWARE.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 ; MysticLight_SDK.dll is MSI's proprietary DLL and is never bundled here (see
 ; README) - if the user has already dropped it next to a previous install,

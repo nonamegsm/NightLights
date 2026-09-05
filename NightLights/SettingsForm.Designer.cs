@@ -19,14 +19,14 @@ namespace NightLights
             SuspendLayout();
             AutoScaleDimensions = new SizeF(6F, 13F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(560, 458);
+            ClientSize = new Size(560, 490);
             Text = "NightLights Settings";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
 
-            var tabs = new TabControl { Location = new Point(12, 12), Size = new Size(536, 390) };
+            var tabs = new TabControl { Location = new Point(12, 12), Size = new Size(536, 422) };
             var schedule = new TabPage("Night schedule");
             var lighting = new TabPage("Lighting modules");
             var energy = new TabPage("Energy and startup");
@@ -57,7 +57,7 @@ namespace NightLights
             AddLabel(schedule, "Sunset to sunrise or quiet hours keeps lights off whenever either period is active.", 16, 300, 485);
 
             chkFury = AddCheck(lighting, "Kingston FURY DIMMs (FURY CTRL service)", 16, 18);
-            chkMystic = AddCheck(lighting, "MSI motherboard RGB (Mystic Light SDK)", 16, 48);
+            chkMystic = AddCheck(lighting, "MSI RGB devices (Mystic Light SDK)", 16, 48);
             chkOpenRgb = AddCheck(lighting, "OpenRGB devices (SDK server)", 16, 78);
             chkOpenRgb.CheckedChanged += (s, e) => UpdateEnabledControls();
             AddLabel(lighting, "Server:", 32, 121);
@@ -68,15 +68,18 @@ namespace NightLights
             btnProbeOpenRgb = new Button { Text = "Test connection / list devices", Location = new Point(32, 156), Size = new Size(245, 28) };
             btnProbeOpenRgb.Click += async (s, e) => await ProbeOpenRgbAsync();
             lighting.Controls.Add(btnProbeOpenRgb);
+            var hardwareGuide = new LinkLabel { Text = "Supported hardware guide", Location = new Point(294, 164), AutoSize = true };
+            hardwareGuide.LinkClicked += (s, e) => OpenHardwareGuide();
+            lighting.Controls.Add(hardwareGuide);
             txtOpenRgbStatus = new TextBox
             {
                 Text = "Start the SDK server in OpenRGB before testing the connection.",
-                Location = new Point(32, 199), Size = new Size(457, 72),
+                Location = new Point(32, 199), Size = new Size(457, 108),
                 Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical
             };
             lighting.Controls.Add(txtOpenRgbStatus);
-            AddLabel(lighting, "OpenRGB controls all compatible devices reported by that server. Disable FURY or MSI here if OpenRGB also controls the same hardware.", 16, 280, 485);
-            AddLabel(lighting, "Use the tray's day profile commands to save or set colors and brightness.", 16, 329, 485);
+            AddLabel(lighting, "OpenRGB controls all compatible devices reported by that server. Disable FURY or MSI here if OpenRGB also controls the same hardware.", 16, 316, 485);
+            AddLabel(lighting, "Use the tray's day profile commands to save or set colors and brightness.", 16, 365, 485);
 
             chkPowerSaver = AddCheck(energy, "Use Windows Power saver during night mode", 16, 18);
             AddLabel(energy, "Remembers your current power plan and restores it when night mode ends, when disabled here, or when NightLights exits. Requires an available Power saver plan.", 32, 51, 465);
@@ -87,9 +90,9 @@ namespace NightLights
             AddLabel(energy, "Check every (seconds):", 16, 301);
             numPollInterval = AddNumber(energy, 175, 297, 15, 3600, 85);
 
-            var ok = new Button { Text = "Save", Location = new Point(372, 416), Size = new Size(82, 28) };
+            var ok = new Button { Text = "Save", Location = new Point(372, 448), Size = new Size(82, 28) };
             ok.Click += BtnOk_Click;
-            var cancel = new Button { Text = "Cancel", Location = new Point(466, 416), Size = new Size(82, 28), DialogResult = DialogResult.Cancel };
+            var cancel = new Button { Text = "Cancel", Location = new Point(466, 448), Size = new Size(82, 28), DialogResult = DialogResult.Cancel };
             Controls.Add(ok);
             Controls.Add(cancel);
             AcceptButton = ok;

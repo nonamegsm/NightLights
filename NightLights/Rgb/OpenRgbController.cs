@@ -60,11 +60,7 @@ namespace NightLights.Rgb
                 using (var session = await OpenSessionAsync().ConfigureAwait(false))
                 {
                     var devices = await session.LoadDevicesAsync().ConfigureAwait(false);
-                    if (devices.Count == 0) return "OpenRGB server answered, but reported no RGB controllers.";
-
-                    int supported = devices.Count(d => d.SupportsStaticOrDirectControl);
-                    string names = string.Join(", ", devices.Select(d => d.DisplayIdentity).Where(s => !string.IsNullOrWhiteSpace(s)));
-                    return $"OpenRGB: {devices.Count} device(s), {supported} controllable for night lighting: {names}";
+                    return OpenRgbHardware.BuildReport(devices);
                 }
             }
             catch (Exception ex)
@@ -87,8 +83,10 @@ namespace NightLights.Rgb
                         return false;
                     }
 
-                    WriteSnapshot(OpenRgbSnapshot.FromDevices(_host, _port, devices));
-                    Logger.Log($"OpenRGB: snapshot saved ({devices.Count} device(s)).");
+                    var unique = BuildUniqueDeviceMap(devices).Values.ToList();
+                    if (unique.Count == 0) return false;
+                    WriteSnapshot(OpenRgbSnapshot.FromDevices(_host, _port, unique));
+                    Logger.Log($"OpenRGB: snapshot saved ({unique.Count} unique device(s)).");
                     return true;
                 }
             }
@@ -118,16 +116,15 @@ namespace NightLights.Rgb
                     if (MergeMissingSnapshotDevices(snapshot, devices))
                         WriteSnapshot(snapshot);
 
-                    int relevant = devices.Count(d => d.HasAnyLitColor);
+                    var unique = BuildUniqueDeviceMap(devices);
                     int changed = 0;
-                    int unsupportedLit = 0;
 
                     foreach (var device in devices)
                     {
-                        if (!device.SupportsStaticOrDirectControl)
+                        string problem = OpenRgbHardware.Problem(device);
+                        if (problem != null || !unique.ContainsKey(device.StableKey))
                         {
-                            if (device.HasAnyLitColor) unsupportedLit++;
-                            Logger.Log("OpenRGB: skipping unsupported device " + device.DisplayIdentity + " (no direct/custom/static mode).");
+                            Logger.Log("OpenRGB: skipping " + device.DisplayIdentity + ": " + (problem ?? "duplicate device identity"));
                             continue;
                         }
 
@@ -136,7 +133,7 @@ namespace NightLights.Rgb
                     }
 
                     Logger.Log($"OpenRGB: turned off {changed}/{devices.Count} device(s).");
-                    return changed > 0 && unsupportedLit == 0 && (relevant == 0 || changed >= relevant);
+                    return changed > 0 && changed == devices.Count;
                 }
             }
             catch (Exception ex)
@@ -204,28 +201,30 @@ namespace NightLights.Rgb
                         (byte)Math.Round(b * brightness / 100.0));
 
                     var profileDevices = new List<OpenRgbSnapshotDevice>();
-                    int unsupportedLit = 0;
+                    var existing = LoadSnapshot();
+                    var unique = BuildUniqueDeviceMap(devices);
+                    int configured = 0;
                     foreach (var device in devices)
                     {
-                        if (!device.SupportsStaticOrDirectControl)
+                        if (!unique.ContainsKey(device.StableKey)) continue;
+                        var mode = OpenRgbHardware.FindColorMode(device);
+                        if (mode == null)
                         {
-                            if (device.HasAnyLitColor) unsupportedLit++;
                             Logger.Log("OpenRGB: skipping unsupported device for static profile: " + device.DisplayIdentity);
+                            // Keep its saved baseline when a mixed server has devices which
+                            // cannot accept a solid color; don't lose that device's restore.
+                            var saved = existing?.Devices.FirstOrDefault(d => d.StableKey == device.StableKey);
+                            profileDevices.Add(saved ?? OpenRgbSnapshotDevice.FromDevice(device, null, device.Colors));
                             continue;
                         }
 
                         var colors = CreateRepeatedColor(device.Colors.Count, scaled);
-                        var mode = FindStaticMode(device) ?? FindDirectMode(device);
-                        var modeForProfile = mode?.Clone();
-                        if (modeForProfile != null)
-                        {
-                            modeForProfile.Brightness = FullBrightness(modeForProfile);
-                            modeForProfile.Colors = CreateRepeatedColor(Math.Max(1, modeForProfile.Colors.Count), scaled);
-                        }
+                        var modeForProfile = OpenRgbHardware.PrepareColorMode(mode, scaled);
                         profileDevices.Add(OpenRgbSnapshotDevice.FromDevice(device, modeForProfile, colors));
+                        configured++;
                     }
 
-                    if (profileDevices.Count == 0) return false;
+                    if (configured == 0) return false;
 
                     WriteSnapshot(new OpenRgbSnapshot
                     {
@@ -236,7 +235,7 @@ namespace NightLights.Rgb
                         Devices = profileDevices
                     });
                     Logger.Log($"OpenRGB: day profile set to static color ({r},{g},{b}) at {brightness}% brightness.");
-                    return unsupportedLit == 0;
+                    return configured == devices.Count;
                 }
             }
             catch (Exception ex)
@@ -266,23 +265,17 @@ namespace NightLights.Rgb
         private async Task<bool> ApplyBlackAsync(OpenRgbSession session, OpenRgbDevice device)
         {
             var black = CreateRepeatedColor(device.Colors.Count, 0);
-            var mode = FindDirectMode(device) ?? FindStaticMode(device);
-            bool wroteMode = false;
-            if (mode != null)
-            {
-                var clone = mode.Clone();
-                clone.Brightness = FullBrightness(clone);
-                clone.Colors = NormalizeColors(black, Math.Max(1, clone.Colors.Count));
-                wroteMode = await session.SendModeAsync(device, clone, device.Modes.IndexOf(mode)).ConfigureAwait(false);
-            }
-
-            bool customOrDirect = FindDirectMode(device) != null;
-            if (customOrDirect)
-                await session.SendAsync(device.Id, SetCustomMode, new byte[0]).ConfigureAwait(false);
-
+            var mode = OpenRgbHardware.FindColorMode(device, true);
+            if (mode == null) return false;
+            var prepared = OpenRgbHardware.PrepareColorMode(mode, 0);
+            int modeIndex = device.Modes.IndexOf(mode);
             bool wroteLeds = await session.SendColorsAsync(device, black).ConfigureAwait(false);
+            // Explicitly select the advertised mode last. SetCustomMode may choose a
+            // different effect on devices with nonstandard mode names.
+            bool wroteMode = await session.SendModeAsync(device, prepared, modeIndex).ConfigureAwait(false);
             var refreshed = await session.ReadDeviceAsync(device.Id).ConfigureAwait(false);
-            return (wroteMode || customOrDirect) && wroteLeds && !refreshed.HasAnyLitColor;
+            var expected = OpenRgbSnapshotDevice.FromDevice(device, prepared, black);
+            return wroteMode && wroteLeds && !refreshed.HasAnyLitColor && ModeMatches(expected, refreshed, modeIndex);
         }
 
         private async Task<bool> RestoreDeviceAsync(OpenRgbSession session, OpenRgbDevice device, OpenRgbSnapshotDevice saved)
@@ -398,6 +391,7 @@ namespace NightLights.Rgb
         private static Dictionary<string, OpenRgbDevice> BuildUniqueDeviceMap(IEnumerable<OpenRgbDevice> devices)
         {
             return devices
+                .Where(d => d.HasStableIdentity)
                 .GroupBy(d => d.StableKey)
                 .Where(g => !string.IsNullOrEmpty(g.Key) && g.Count() == 1)
                 .ToDictionary(g => g.Key, g => g.First());
@@ -518,19 +512,12 @@ namespace NightLights.Rgb
 
         private static OpenRgbMode FindStaticMode(OpenRgbDevice device)
         {
-            return device.Modes.FirstOrDefault(m =>
-                string.Equals(m.Name, "static", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(m.Name, "static color", StringComparison.OrdinalIgnoreCase) ||
-                m.Name.IndexOf("static", StringComparison.OrdinalIgnoreCase) >= 0);
+            return OpenRgbHardware.FindStaticMode(device);
         }
 
         private static OpenRgbMode FindDirectMode(OpenRgbDevice device)
         {
-            return device.Modes.FirstOrDefault(m =>
-                string.Equals(m.Name, "direct", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(m.Name, "custom", StringComparison.OrdinalIgnoreCase) ||
-                m.Name.IndexOf("direct", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                m.Name.IndexOf("custom", StringComparison.OrdinalIgnoreCase) >= 0);
+            return OpenRgbHardware.FindDirectMode(device);
         }
 
         private static int FindCompatibleModeIndex(OpenRgbDevice device, string name, int value)
@@ -561,11 +548,6 @@ namespace NightLights.Rgb
         private static List<uint> CreateRepeatedColor(int count, uint color)
         {
             return Enumerable.Repeat(color, Math.Max(1, count)).ToList();
-        }
-
-        private static uint FullBrightness(OpenRgbMode mode)
-        {
-            return Math.Max(mode.BrightnessMin, mode.BrightnessMax);
         }
 
         private static int Clamp(int value, int min, int max)
@@ -720,8 +702,8 @@ namespace NightLights.Rgb
             public List<OpenRgbLed> Leds { get; set; } = new List<OpenRgbLed>();
             public List<uint> Colors { get; set; } = new List<uint>();
             public string StableKey => string.Join("|", new[] { Vendor, Name, Serial, Location }.Select(s => s ?? string.Empty));
+            public bool HasStableIdentity => new[] { Name, Serial, Location }.Any(s => !string.IsNullOrWhiteSpace(s));
             public string DisplayIdentity => string.IsNullOrEmpty(Vendor) ? Name : Vendor + " " + Name;
-            public bool SupportsStaticOrDirectControl => FindStaticMode(this) != null || FindDirectMode(this) != null;
             public bool HasAnyLitColor => Colors != null && Colors.Any(c => c != 0);
         }
 

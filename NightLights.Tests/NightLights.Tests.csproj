@@ -31,6 +31,7 @@
     <Compile Include="SettingsTests.cs" />
     <Compile Include="PowerTests.cs" />
     <Compile Include="OpenRgbTests.cs" />
+    <Compile Include="HardwareTests.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

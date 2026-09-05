@@ -3,6 +3,24 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.1.1] - 2026-09-05
+
+### Added
+- Supported-hardware guide with native/bridged support matrix, upstream device
+  examples, prerequisites, limitations, and links to OpenRGB's model list.
+- Per-device OpenRGB report with category, LED count, compatible mode, and an
+  explanation for unsupported or ambiguously identified devices.
+- OpenRGB color-mode recognition for Solid/Fixed names and advertised per-LED or
+  mode-specific color capabilities, including differently named device modes.
+- Hardware guide link in Settings and an offline copy included in installers.
+
+### Fixed
+- Explicitly select deterministic colors when a mode also offers random colors.
+- Apply the selected night mode after updating LED colors, without relying on a
+  vendor's interpretation of the generic custom-mode command.
+- Skip invalid LED/color buffers and duplicate identities, report partial blackout
+  accurately, and preserve unsupported-device baselines when setting a day color.
+
 ## [1.1.0] - 2026-09-05
 
 ### Added

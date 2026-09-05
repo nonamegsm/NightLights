@@ -89,6 +89,7 @@
     <Compile Include="Rgb\ILightingModule.cs" />
     <Compile Include="Rgb\LightingCoordinator.cs" />
     <Compile Include="Rgb\OpenRgbController.cs" />
+    <Compile Include="Rgb\OpenRgbHardware.cs" />
     <Compile Include="Power\IPowerSchemeApi.cs" />
     <Compile Include="Power\WindowsPowerSchemeApi.cs" />
     <Compile Include="Power\PowerPlanController.cs" />

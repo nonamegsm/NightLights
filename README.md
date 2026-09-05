@@ -10,7 +10,7 @@ Choose which modules to enable:
 
 - **Kingston FURY DIMM lighting**, controlled through FURY CTRL's own background
   service (`FuryControllerService.exe`) over its local WebSocket API.
-- **MSI motherboard RGB ("Mystic Light")**, controlled through MSI's official
+- **MSI RGB devices ("Mystic Light")**, controlled through MSI's official
   Mystic Light SDK.
 - **OpenRGB devices** (optional) through an OpenRGB SDK server: discover compatible
   devices, switch lighting off at night, and restore saved colors/modes during the day.
@@ -24,6 +24,20 @@ No admin rights needed, nothing is installed as a service, and there's no visibl
 window - just a tray icon. Sunrise/sunset is computed fully offline from your
 latitude/longitude (NOAA solar formulas). Scheduling needs no internet connection;
 OpenRGB connects only to the SDK server address you configure (localhost by default).
+
+## Hardware support at a glance
+
+See [HARDWARE.md](HARDWARE.md) for the full supported-hardware guide,
+OpenRGB upstream links, setup requirements, and the difference between native
+NightLights integrations and OpenRGB-bridged devices.
+
+| Area | Path | Required setup | NightLights behavior |
+| --- | --- | --- | --- |
+| Kingston FURY DIMM RGB | Native FURY CTRL service | FURY CTRL service on `127.0.0.1:55599` | Save, turn off at night, restore, or set a static day color for service-reported DIMM lighting. |
+| MSI Mystic Light devices | Native MSI SDK | MSI Center/Mystic Light, SDK enabled, `MysticLight_SDK.dll` next to `NightLights.exe` | Save and restore SDK-reported LED zone colors; set zones to black at night. |
+| OpenRGB devices | OpenRGB SDK server | OpenRGB controls the device, SDK Server running, NightLights pointed at host/port | Control SDK-reported devices with usable direct/custom/static modes. Use **Test connection / list devices** to see per-device status. |
+| Windows Power saver | Windows power-plan API | An available Power saver plan and Windows policy allowing plan changes | Switch to Power saver at night and restore the previous plan in the morning. |
+| System audio | Windows Core Audio endpoint | A default playback endpoint | Mute at night and unmute when day mode returns. |
 
 ## Installation
 
@@ -123,8 +137,13 @@ starts automatically with Windows), NightLights will find it on
    or **Set day profile color...** command.
 
 NightLights uses SDK protocol 3 (OpenRGB 0.7 or later). It supports devices with a
-usable direct/custom/static lighting mode. Hardware detection and device-specific
-drivers remain OpenRGB's responsibility; unsupported devices are reported in the log.
+usable direct/custom/static/solid/fixed lighting mode or advertised per-LED or
+mode-specific color control. The connection test lists device types, LED counts,
+compatible modes, and reasons for unsupported devices. Hardware detection and device-specific
+drivers remain OpenRGB's responsibility; unsupported devices are reported in the
+device list/log. See [HARDWARE.md](HARDWARE.md#openrgb-supported-devices) for
+the upstream OpenRGB support list and examples of devices that may or may not
+expose the modes NightLights needs.
 Day profiles are stored separately for each server under `%AppData%\NightLights`,
 and devices are matched by identity when restoring after the server's device order changes.
 Keep other RGB apps/effect plugins from overriding the same devices.
@@ -299,6 +318,7 @@ NightLights/
     ILightingModule.cs       common lighting module contract and vendor adapters
     LightingCoordinator.cs   snapshot, transition, night enforcement, restore retries
     OpenRgbController.cs     optional OpenRGB TCP SDK client
+    OpenRgbHardware.cs       device capabilities and hardware support reporting
   Power/
     PowerPlanController.cs   reversible night Power saver policy and recovery state
     WindowsPowerSchemeApi.cs Windows power-plan API adapter

@@ -14,7 +14,8 @@ namespace NightLights.Tests
                 { "Settings", SettingsTests.Run },
                 { "Lighting transitions", LightingTests.Run },
                 { "Power recovery", PowerTests.Run },
-                { "OpenRGB protocol", OpenRgbTests.Run }
+                { "OpenRGB protocol", OpenRgbTests.Run },
+                { "Hardware compatibility", HardwareTests.Run }
             };
             int failures = 0;
             foreach (var suite in suites)
