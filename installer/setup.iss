@@ -16,7 +16,7 @@
 #define MyAppURL "https://github.com/nonamegsm/NightLights"
 #define MyAppExeName "NightLights.exe"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.1.1"
+  #define MyAppVersion "1.1.2"
 #endif
 ; BuildArch selects which arch-specific build output to package - "x86" or "x64"
 ; (matching the Release|x86 / Release|x64 project configs). Produces a separate,

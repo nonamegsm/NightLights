@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.1.2] - 2026-09-05
+
+### Added
+- Tray icon changes with the active mode: a gold sun for day and blue crescent moon
+  for night, including scheduled changes, manual overrides, startup, and resume.
+
+### Changed
+- Mode icon and tooltip update before hardware operations, so slow or unavailable
+  lighting controllers do not delay the displayed mode.
+- Sun/moon icons are cached and their native resources are released when the app exits.
+
 ## [1.1.1] - 2026-09-05
 
 ### Added

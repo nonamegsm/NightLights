@@ -94,7 +94,7 @@ version - it'll just log a note and skip that part rather than crash.
    workload).
 3. Build (Ctrl+Shift+B). No NuGet packages are required - everything used is a
    built-in .NET Framework assembly.
-4. Run it. A moon icon appears in the system tray.
+4. Run it. A sun (day mode) or moon (night mode) appears in the system tray.
 
 *(.NET Framework 4.8 was chosen deliberately, not .NET 5+/8: the encryption
 FuryControllerService uses is Rijndael with a 256-bit block size, which the
@@ -177,6 +177,12 @@ savings depend on the hardware, workload, and power-plan configuration; NightLig
 does not estimate watts, carbon emissions, or ambient light levels.
 
 ## Using it
+
+The tray icon follows the active mode: **gold sun for day**, **blue crescent moon
+for night**. It updates at startup, on schedule transitions, after resume, and when
+you choose Force day / Force night or change the schedule in Settings. The tooltip
+also identifies automatic or forced mode. Hardware availability is shown separately
+in the tray menu; the icon reflects the mode decision even if a device is unavailable.
 
 Right-click the tray icon:
 
@@ -306,6 +312,7 @@ NightLights.sln
 NightLights/
   Program.cs              entry point, tray-only (no main window)
   TrayContext.cs           tray icon, menu, day/night polling loop
+  TrayModeIcons.cs         cached sun/moon icons for the active mode
   AppSettings.cs           settings persisted to %AppData%\NightLights\settings.json
   SunTimes.cs               offline NOAA sunrise/sunset calculator
   NightSchedule.cs          sun / quiet-hour / combined automatic policy

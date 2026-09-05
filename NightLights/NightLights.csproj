@@ -76,6 +76,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="Logger.cs" />
     <Compile Include="TrayContext.cs" />
+    <Compile Include="TrayModeIcons.cs" />
     <Compile Include="AppSettings.cs" />
     <Compile Include="SunTimes.cs" />
     <Compile Include="NightSchedule.cs" />

@@ -14,6 +14,7 @@ namespace NightLights
     internal sealed class TrayContext : ApplicationContext
     {
         private readonly NotifyIcon _trayIcon;
+        private readonly TrayModeIcons _modeIcons = new TrayModeIcons();
         private readonly System.Windows.Forms.Timer _timer;
         private readonly Control _dispatcher = new Control();
         private readonly SemaphoreSlim _operation = new SemaphoreSlim(1, 1);
@@ -26,6 +27,7 @@ namespace NightLights
         private OpenRgbController _openRgb;
         private AppSettings _settings;
         private bool? _lastIsNight;
+        private bool? _displayedIsNight;
         private volatile bool _exiting;
         private System.Windows.Forms.Timer _resumeSettleTimer;
         private readonly ToolStripMenuItem _statusItem, _lightingStatusItem, _powerStatusItem;
@@ -56,7 +58,9 @@ namespace NightLights
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Exit", null, async (s, e) => await ExitAppAsync()));
 
-            _trayIcon = new NotifyIcon { Icon = LoadTrayIcon(), Text = "NightLights", ContextMenuStrip = menu, Visible = true };
+            _trayIcon = new NotifyIcon { ContextMenuStrip = menu };
+            UpdateTrayMode(NightSchedule.IsNight(_settings, DateTime.Now));
+            _trayIcon.Visible = true;
             _trayIcon.DoubleClick += async (s, e) => await OpenSettingsAsync();
             UpdateMenuChecks();
             _timer = new System.Windows.Forms.Timer { Interval = _settings.PollIntervalSeconds * 1000 };
@@ -97,6 +101,9 @@ namespace NightLights
         private async Task ApplyPolicyAsync(bool force, bool captureBeforeNight = true)
         {
             bool isNight = NightSchedule.IsNight(_settings, DateTime.Now);
+            // Show the active decision immediately, even when a hardware module is
+            // slow or unavailable. _lastIsNight separately tracks applied policies.
+            UpdateTrayMode(isNight);
             // Run power policy on every poll: it owns transition tracking and retries,
             // and recovers an outstanding restore even if the module is now disabled.
             await Task.Run(() =>
@@ -113,10 +120,19 @@ namespace NightLights
                 await Task.Run(() => { if (isNight) _volume.Mute(); else _volume.Unmute(); });
             }
             _lastIsNight = isNight;
-            string mode = (isNight ? "Night" : "Day") + (_settings.ManualNightOverride.HasValue ? " (forced)" : " (auto)");
-            _statusItem.Text = "NightLights - " + mode;
             _lightingStatusItem.Text = _lighting.Status;
             _powerStatusItem.Text = _power.Status;
+        }
+
+        private void UpdateTrayMode(bool isNight)
+        {
+            if (_displayedIsNight != isNight)
+            {
+                _trayIcon.Icon = _modeIcons.ForNight(isNight);
+                _displayedIsNight = isNight;
+            }
+            string mode = (isNight ? "Night" : "Day") + (_settings.ManualNightOverride.HasValue ? " (forced)" : " (auto)");
+            _statusItem.Text = "NightLights - " + mode;
             _trayIcon.Text = "NightLights - " + mode;
         }
 
@@ -229,6 +245,7 @@ namespace NightLights
                 _timer.Dispose();
                 _trayIcon.Visible = false;
                 _trayIcon.Dispose();
+                _modeIcons.Dispose();
                 _dispatcher.Dispose();
                 Application.Exit();
             }
@@ -248,12 +265,6 @@ namespace NightLights
             AppSettings.ApplyRunAtStartup(_settings.RunAtStartup);
             _settings.Save();
             UpdateMenuChecks();
-        }
-
-        private static Icon LoadTrayIcon()
-        {
-            try { return Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
-            catch { return SystemIcons.Application; }
         }
 
         private static void OpenLogFolder()
