@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [1.0.1] - 2026-09-05
 
 ### Changed
 - Release now builds and publishes separate `NightLights-Setup-x86-*.exe` and
@@ -20,6 +20,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   own GUI.
 
 ### Fixed
+- Corrected installer source and icon paths so both Windows setup executables build.
+- Package only the application and its configuration; never include local vendor DLLs.
 - `AppSettings` is now `public` (was `internal`), fixing a build error where `SettingsForm`'s
   public constructor/`Result` property exposed a less-accessible type.
 - "Force night/day now", "Follow sun automatically", and closing Settings now always actually

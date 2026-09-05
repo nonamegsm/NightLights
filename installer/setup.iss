@@ -27,7 +27,7 @@
   #define BuildArch "x64"
 #endif
 #ifndef SourceBinDir
-  #define SourceBinDir "..\NightLights\NightLights\bin\{#BuildArch}\Release"
+  #define SourceBinDir "..\NightLights\bin\" + BuildArch + "\Release"
 #endif
 
 [Setup]
@@ -47,7 +47,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\dist
 OutputBaseFilename={#MyAppName}-Setup-{#BuildArch}-{#MyAppVersion}
-SetupIconFile=..\NightLights\NightLights\App.ico
+SetupIconFile=..\NightLights\App.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2
 SolidCompression=yes
@@ -67,7 +67,6 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 Source: "{#SourceBinDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceBinDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#SourceBinDir}\{#MyAppName}.exe.config"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
